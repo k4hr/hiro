@@ -2,7 +2,6 @@
 'use client';
 
 import HiromantBlock from './DownBarUtil/hiromant';
-import OnlyDown from './DownBarUtil/onlydown';
 
 /**
  * Общий DownBar — блок в конце страницы + футер, который прижимается к низу экрана.
