@@ -37,18 +37,14 @@ export default function HiromantBlock() {
           <p className="miniinfo-text">{firstParagraph}</p>
 
           <div className="miniinfo-actions">
-            <button type="button" className="miniinfo-btn miniinfo-btn--ghost" onClick={handleToggle}>
+            <button type="button" className="miniinfo-btn" onClick={handleToggle}>
               {open ? 'Скрыть подробности' : 'Подробнее'}
             </button>
           </div>
 
+          {/* ✅ тут больше НЕТ текста “Мы специально…” */}
           <div className={`miniinfo-more ${open ? 'is-open' : ''}`} aria-hidden={!open}>
             <div className="divider" />
-
-            <p className="miniinfo-text">
-              Мы специально делаем это <b>без анкет и лишних вопросов</b>. Никаких «напиши о себе» — только фото. Если
-              снимок действительно нечитабелен (темно, смазано, не вся ладонь), мы честно попросим переснять по примеру.
-            </p>
           </div>
         </div>
 
@@ -149,19 +145,18 @@ export default function HiromantBlock() {
           color: rgba(233, 236, 255, 0.72);
         }
 
-        /* ✅ одна кнопка на всю ширину + ниже по высоте */
         .miniinfo-actions {
           margin-top: 12px;
         }
 
         .miniinfo-btn {
           width: 100%;
-          padding: 9px 14px; /* ✅ ниже */
+          padding: 9px 14px;
           border-radius: 999px;
           border: 1px solid rgba(233, 236, 255, 0.16);
           background: rgba(255, 255, 255, 0.03);
           color: var(--text);
-          font-size: 13px; /* ✅ чуть меньше */
+          font-size: 13px;
           font-weight: 850;
           text-align: center;
           cursor: pointer;
@@ -189,7 +184,7 @@ export default function HiromantBlock() {
           transition: max-height 260ms ease, opacity 220ms ease;
         }
         .miniinfo-more.is-open {
-          max-height: 420px;
+          max-height: 60px; /* только под divider */
           opacity: 1;
         }
 
