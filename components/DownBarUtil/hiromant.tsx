@@ -17,11 +17,11 @@ export default function HiromantBlock() {
     setOpen((v) => !v);
   };
 
-  const firstParagraph = useMemo(
+  const intro = useMemo(
     () => (
       <>
-        «Хиромант» — это режим, где вы загружаете <b>две фотографии</b>: левую и правую ладонь, а приложение собирает для
-        вас <b>структурированный отчёт</b> по классической хиромантии.
+        <b>Активная</b> и <b>пассивная</b> ладонь — это два слоя одной судьбы. Мы просим фото <b>обеих рук</b>, чтобы
+        сравнить: что дано от рождения и что стало результатом выбора, привычек и пути.
       </>
     ),
     []
@@ -32,9 +32,9 @@ export default function HiromantBlock() {
       <section className="miniinfo">
         {/* Блок 1 — вводный + раскрытие */}
         <div className="miniinfo-block">
-          <h2 className="miniinfo-title">Хиромант в «АРКАНУМ»</h2>
+          <h2 className="miniinfo-title">Активная и пассивная ладонь: как читать две руки</h2>
 
-          <p className="miniinfo-text">{firstParagraph}</p>
+          <p className="miniinfo-text">{intro}</p>
 
           <div className="miniinfo-actions">
             <button type="button" className="miniinfo-btn" onClick={handleToggle}>
@@ -42,60 +42,234 @@ export default function HiromantBlock() {
             </button>
           </div>
 
-          {/* ✅ тут больше НЕТ текста “Мы специально…” */}
           <div className={`miniinfo-more ${open ? 'is-open' : ''}`} aria-hidden={!open}>
             <div className="divider" />
           </div>
         </div>
 
-        {/* Блок 2 — как проходит скан (скрываем, пока не нажали "Подробнее") */}
+        {/* Блок 2 — какая рука активная */}
         <div className={`miniinfo-block ${open ? '' : 'is-hidden'}`}>
-          <h2 className="miniinfo-title">Как проходит скан ладоней</h2>
-          <p className="miniinfo-text">
-            Сначала вы загружаете <b>левую ладонь</b>, затем <b>правую</b>. Логика простая: левая чаще показывает
-            «задатки/базу», правая — «как это проявляется сейчас». Мы сравниваем их, чтобы отчёт был похож на историю
-            изменений, а не на набор общих фраз.
-          </p>
-          <p className="miniinfo-text">
-            Затем «Хиромант» отмечает основные линии: <b>жизни</b>, <b>головы</b>, <b>сердца</b>, <b>судьбы</b> (и
-            дополнительные — если они читаются уверенно). Для каждой линии учитываются длина, глубина, форма, ветви,
-            пересечения, разрывы и другие элементы, которые традиционно используют в хиромантии.
-          </p>
-        </div>
-
-        {/* Блок 3 — что вы получите (скрываем, пока не нажали "Подробнее") */}
-        <div className={`miniinfo-block ${open ? '' : 'is-hidden'}`}>
-          <h2 className="miniinfo-title">Что вы получите в отчёте</h2>
-          <p className="miniinfo-text">Готовый отчёт строится блоками, чтобы его можно было быстро прочитать и сохранить:</p>
+          <h2 className="miniinfo-title">Какая рука активная</h2>
 
           <ul className="miniinfo-list">
             <li>
-              <b>3 главные фразы</b> — короткое резюме (“печать” отчёта).
+              <b>Правша:</b> активная — правая, пассивная — левая.
             </li>
             <li>
-              <b>Личность и мышление</b> — как вы принимаете решения и на чём держится фокус.
+              <b>Левша:</b> активная — левая, пассивная — правая.
             </li>
             <li>
-              <b>Отношения</b> — эмоциональный стиль, границы, что важно в близости.
+              <b>Если обеими одинаково:</b> активной считаем ту, которой чаще пишешь/работаешь, а вторую читаем как
+              “внутренний слой”.
+            </li>
+          </ul>
+        </div>
+
+        {/* Блок 3 — пассивная ладонь */}
+        <div className={`miniinfo-block ${open ? '' : 'is-hidden'}`}>
+          <h2 className="miniinfo-title">Пассивная ладонь — что дано</h2>
+
+          <p className="miniinfo-text">Пассивная рука показывает врождённый сценарий:</p>
+
+          <ul className="miniinfo-list">
+            <li>базовый темперамент и характер “по умолчанию”</li>
+            <li>природные таланты и слабые места</li>
+            <li>внутренние потребности (что важно на уровне души)</li>
+            <li>семейные/родовые установки</li>
+            <li>потенциал: “кем ты можешь стать, если раскроешься”</li>
+          </ul>
+
+          <p className="miniinfo-text">
+            Пассивная ладонь отвечает на вопрос: <b>«С чем ты пришёл в эту жизнь?»</b>
+          </p>
+        </div>
+
+        {/* Блок 4 — активная ладонь */}
+        <div className={`miniinfo-block ${open ? '' : 'is-hidden'}`}>
+          <h2 className="miniinfo-title">Активная ладонь — что стало</h2>
+
+          <p className="miniinfo-text">Активная рука показывает то, что ты сделал из себя:</p>
+
+          <ul className="miniinfo-list">
+            <li>текущий характер, привычки и стиль решений</li>
+            <li>как ты реально проживаешь эмоции и отношения</li>
+            <li>как сложился твой путь (карьера, выборы, повороты)</li>
+            <li>как меняется энергия/ресурс под нагрузкой</li>
+            <li>куда ты идёшь сейчас (вектор ближайших лет)</li>
+          </ul>
+
+          <p className="miniinfo-text">
+            Активная ладонь отвечает на вопрос: <b>«Во что превратился потенциал и куда он ведёт?»</b>
+          </p>
+        </div>
+
+        {/* Блок 5 — линии */}
+        <div className={`miniinfo-block ${open ? '' : 'is-hidden'}`}>
+          <h2 className="miniinfo-title">Какие линии мы смотрим и за что они отвечают</h2>
+
+          <div className="miniinfo-lines">
+            <div className="lineCard">
+              <div className="lineTitle">1) Линия Сердца</div>
+              <div className="lineMeta">Эмоции и любовь</div>
+              <p className="miniinfo-text">
+                <b>Где:</b> под пальцами, верхняя поперечная линия.
+              </p>
+              <ul className="miniinfo-list">
+                <li>как ты любишь и к кому привязываешься</li>
+                <li>эмоциональная устойчивость</li>
+                <li>ревность/доверие, глубина чувств</li>
+                <li>как проявляешь тепло: словами, действиями, телесно, заботой</li>
+              </ul>
+              <p className="miniinfo-text">
+                <b>Пассивная:</b> врождённый эмоциональный тип. <br />
+                <b>Активная:</b> как ты любишь сейчас (границы/мягкость/жёсткость).
+              </p>
+            </div>
+
+            <div className="lineCard">
+              <div className="lineTitle">2) Линия Головы</div>
+              <div className="lineMeta">Мышление и решения</div>
+              <p className="miniinfo-text">
+                <b>Где:</b> середина ладони, идёт поперёк.
+              </p>
+              <ul className="miniinfo-list">
+                <li>логика vs интуиция</li>
+                <li>скорость принятия решений</li>
+                <li>концентрация, память, обучаемость</li>
+                <li>креативность и нестандартные ходы</li>
+              </ul>
+              <p className="miniinfo-text">
+                <b>Пассивная:</b> природный ум (аналитик/визионер/интуит/практик). <br />
+                <b>Активная:</b> как опыт “перепрошил” мышление.
+              </p>
+            </div>
+
+            <div className="lineCard">
+              <div className="lineTitle">3) Линия Жизни</div>
+              <div className="lineMeta">Ресурс, энергия, ритм</div>
+              <p className="miniinfo-text">
+                <b>Где:</b> дугой вокруг основания большого пальца.
+              </p>
+              <ul className="miniinfo-list">
+                <li>запас энергии и выносливости</li>
+                <li>темп жизни: рывками или ровным марафоном</li>
+                <li>чувствительность к стрессу и восстановление</li>
+                <li>периоды перемен (по веткам/разрывам/островкам)</li>
+              </ul>
+              <p className="miniinfo-text">
+                <i>Важно:</i> линия жизни не про “сколько проживёшь”, а про качество ресурса и ритм.
+                <br />
+                <b>Пассивная:</b> врождённая “батарейка”. <br />
+                <b>Активная:</b> как ты расходуешь и восстанавливаешься сейчас.
+              </p>
+            </div>
+
+            <div className="lineCard">
+              <div className="lineTitle">4) Линия Судьбы</div>
+              <div className="lineMeta">Путь, карьера, обстоятельства</div>
+              <p className="miniinfo-text">
+                <b>Где:</b> вертикальная линия к среднему пальцу (может быть слабой или отсутствовать).
+              </p>
+              <ul className="miniinfo-list">
+                <li>ощущение предназначения и “пути”</li>
+                <li>карьера и жизненный вектор</li>
+                <li>влияние обстоятельств и людей</li>
+                <li>переломы и смены курса (разрывы/перекрестия)</li>
+              </ul>
+              <p className="miniinfo-text">
+                <b>Пассивная:</b> сценарий пути “как сложилось бы само”. <br />
+                <b>Активная:</b> как ты реально строишь путь (сам/события ведут).
+              </p>
+            </div>
+
+            <div className="lineCard">
+              <div className="lineTitle">5) Линия Солнца</div>
+              <div className="lineMeta">Талант, признание, удовольствие</div>
+              <p className="miniinfo-text">
+                <b>Где:</b> вертикально к безымянному пальцу.
+              </p>
+              <ul className="miniinfo-list">
+                <li>самовыражение, вкус, стиль, харизма</li>
+                <li>признание и “светимость” человека</li>
+                <li>удовлетворённость своим делом</li>
+              </ul>
+              <p className="miniinfo-text">
+                <b>Пассивная:</b> врождённая одарённость/харизма. <br />
+                <b>Активная:</b> насколько ты это реализовал сейчас.
+              </p>
+            </div>
+
+            <div className="lineCard">
+              <div className="lineTitle">6) Линия Меркурия</div>
+              <div className="lineMeta">Коммуникации, деловая жилка</div>
+              <p className="miniinfo-text">
+                <b>Где:</b> вертикально к мизинцу (не у всех выражена).
+              </p>
+              <ul className="miniinfo-list">
+                <li>переговоры, продажи, коммуникации</li>
+                <li>предпринимательский склад</li>
+                <li>практичность и “чутьё на людей”</li>
+              </ul>
+              <p className="miniinfo-text">
+                <b>Пассивная:</b> природный дар общения/деловитости. <br />
+                <b>Активная:</b> как ты пользуешься этим в жизни и работе.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Блок 6 — горы */}
+        <div className={`miniinfo-block ${open ? '' : 'is-hidden'}`}>
+          <h2 className="miniinfo-title">Дополнительно: “горы” (подушечки ладони)</h2>
+
+          <p className="miniinfo-text">Подушечки под пальцами показывают силу архетипов:</p>
+
+          <ul className="miniinfo-list">
+            <li>
+              <b>Венера</b> — любовь к жизни, чувственность, тепло
             </li>
             <li>
-              <b>Путь и карьера</b> — направление, повороты, влияние обстоятельств.
+              <b>Юпитер</b> — амбиции, лидерство
             </li>
             <li>
-              <b>Ресурс и стресс</b> — где запас прочности и где тонкие места.
+              <b>Сатурн</b> — ответственность, глубина
             </li>
             <li>
-              <b>Ключевые периоды</b> — без точных дат, если уверенность низкая.
+              <b>Аполлон</b> — творчество, вкус, признание
             </li>
             <li>
-              <b>3 рекомендации</b> — практично и без “тумана”.
+              <b>Меркурий</b> — умение договариваться
+            </li>
+            <li>
+              <b>Луна</b> — интуиция, воображение, перемены
+            </li>
+            <li>
+              <b>Марс</b> — воля, смелость, стойкость
             </li>
           </ul>
 
           <p className="miniinfo-text">
-            В конце мы показываем <b>уровень уверенности</b> и пометку качества фото. Если что-то не видно — мы это не
-            «додумываем».
+            <b>Пассивная:</b> врождённая сила архетипа. <br />
+            <b>Активная:</b> как он проявляется и “прокачан” сейчас.
           </p>
+        </div>
+
+        {/* Блок 7 — разница между руками */}
+        <div className={`miniinfo-block ${open ? '' : 'is-hidden'}`}>
+          <h2 className="miniinfo-title">Как трактуют разницу между руками</h2>
+
+          <ul className="miniinfo-list">
+            <li>
+              Если активная ладонь <b>сильнее</b> и “богаче” линиями — человек переписал судьбу, растёт, строит свой путь.
+            </li>
+            <li>
+              Если ладони <b>почти одинаковые</b> — жизнь идёт близко к врождённой программе, курс ровный.
+            </li>
+            <li>
+              Если активная ладонь <b>беднее/слабее</b> — потенциал есть, но он зажат, не реализован, человек “живёт не
+              свою мощность”.
+            </li>
+          </ul>
         </div>
       </section>
 
@@ -184,7 +358,7 @@ export default function HiromantBlock() {
           transition: max-height 260ms ease, opacity 220ms ease;
         }
         .miniinfo-more.is-open {
-          max-height: 60px; /* только под divider */
+          max-height: 60px;
           opacity: 1;
         }
 
@@ -202,6 +376,38 @@ export default function HiromantBlock() {
 
         .miniinfo-list li {
           margin: 6px 0;
+        }
+
+        .miniinfo-lines {
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+          margin-top: 10px;
+        }
+
+        .lineCard {
+          border-radius: 18px;
+          padding: 14px 14px 12px;
+          border: 1px solid rgba(233, 236, 255, 0.10);
+          background: rgba(255, 255, 255, 0.03);
+          box-shadow: 0 10px 26px rgba(0, 0, 0, 0.40);
+          backdrop-filter: blur(14px);
+          -webkit-backdrop-filter: blur(14px);
+        }
+
+        .lineTitle {
+          font-weight: 900;
+          color: var(--text);
+          font-size: 15px;
+          letter-spacing: -0.01em;
+        }
+
+        .lineMeta {
+          margin-top: 2px;
+          font-size: 12px;
+          color: rgba(233, 236, 255, 0.62);
+          text-transform: uppercase;
+          letter-spacing: 0.10em;
         }
       `}</style>
     </>
