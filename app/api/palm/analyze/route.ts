@@ -132,11 +132,8 @@ function safeNum(v: any): number | null {
 
 function buildPrompt(args: { handedness: Handedness; dob: string; age: number | null; selectedList: OptionKey[] }) {
   const selectedTitles = args.selectedList.map((k) => optionTitle(k)).join('\n');
+  const ageLine = Number.isFinite(args.age as any) && args.age !== null ? String(args.age) : '';
 
-  const ageLine =
-    Number.isFinite(args.age as any) && args.age !== null ? String(args.age) : '';
-
-  // ВАЖНО: в промпте нет Markdown-символики списков с тире и нет "дисклеймеров" про медицину/развлекательность.
   return [
     'Ты — эксперт по чтению ладони. Проанализируй ДВА фото ладоней: фото №1 — левая, фото №2 — правая.',
     '',
@@ -188,13 +185,13 @@ function buildPrompt(args: { handedness: Handedness; dob: string; age: number | 
     'СПИСОК ПУНКТОВ ДЛЯ РАЗБОРА (ИМЕННО ИХ И ТОЛЬКО ИХ):',
     selectedTitles,
     '',
-    'ПОСЛЕ ВСЕХ ПУНКТОВ ДОБАВЬ ДВА ДОПОЛНИТЕЛЬНЫХ БЛОКА:',
-    'N) Общий вывод:',
+    'ПОСЛЕ ВСЕХ ПУНКТОВ ДОБАВЬ ДВА ДОПОЛНИТЕЛЬНЫХ БЛОКА (БЕЗ ЛЮБЫХ НОМЕРОВ И БЕЗ "N" И "N+1"):',
+    'Общий вывод:',
     '6–9 предложений.',
     'Объедини главные повторяющиеся темы из пунктов: сильные стороны, основной стиль поведения, ключевой ограничитель, куда “растёт” активная рука относительно пассивной.',
     '',
-    'N+1) Общие советы (7 пунктов):',
-    'Ровно 7 советов, каждый с новой строки, формат 1), 2), 3)…',
+    'Общие советы:',
+    'Ровно 7 советов, каждый с новой строки, формат: "1) ...", "2) ...", "3) ...".',
     'Только действия: правила, привычки, коммуникация, работа, режим, границы, фокус.',
     'Без воды, без повторов советов из пунктов (должны быть более широкими и стратегическими).',
     '',
@@ -276,7 +273,6 @@ export async function POST(req: Request) {
     const dob = String(body.dob || '').trim();
     const age = safeNum(body.age);
 
-    // selected может отсутствовать (тогда возьмём из Report.input)
     const selectedFromReq = body.selected as Record<string, any> | undefined;
 
     if (!initData) return NextResponse.json({ ok: false, error: 'NO_INIT_DATA' }, { status: 401 });
@@ -311,19 +307,16 @@ export async function POST(req: Request) {
     const rightUrl = String(scan.rightImageUrl || '').trim();
     if (!leftUrl || !rightUrl) return NextResponse.json({ ok: false, error: 'NO_PHOTOS' }, { status: 400 });
 
-    // если уже готово — отдаём
     if (scan.status === 'READY' && scan.aiText) {
       return NextResponse.json({ ok: true, text: scan.aiText, cached: true });
     }
 
-    // достаём selected из DRAFT/последнего PALM report
     const lastAnyReport = await prisma.report.findFirst({
       where: { userId: user.id, type: 'PALM', palmScanId: scanId },
       orderBy: { createdAt: 'desc' },
       select: { id: true, status: true, input: true, text: true },
     });
 
-    // если в Report уже есть READY текст — отдаём и синхронизируем PalmScan
     if (lastAnyReport?.status === 'READY' && lastAnyReport.text) {
       await prisma.palmScan.update({ where: { id: scanId }, data: { status: 'READY', aiText: lastAnyReport.text } });
       return NextResponse.json({ ok: true, text: lastAnyReport.text, cached: true });
@@ -338,13 +331,11 @@ export async function POST(req: Request) {
     const selectedList = pickSelected(selectedObj);
     if (!selectedList.length) return NextResponse.json({ ok: false, error: 'NO_SELECTED' }, { status: 400 });
 
-    // ставим ANALYZING
     await prisma.palmScan.update({
       where: { id: scanId },
       data: { status: 'ANALYZING', errorCode: null, errorText: null, qualityFlag: false, qualityNote: null },
     });
 
-    // Report: если есть DRAFT — переиспользуем, иначе создаём
     const draft = await prisma.report.findFirst({
       where: { userId: user.id, type: 'PALM', palmScanId: scanId, status: 'DRAFT' },
       orderBy: { createdAt: 'desc' },
