@@ -58,6 +58,9 @@ type OptionKey =
 
 const PRICE_RUB = 19;
 
+/** ✅ положи файл в /public/palm-example.png */
+const PALM_EXAMPLE_PHOTO_SRC = '/palm-example.png';
+
 function daysInMonth(year: number, month: number) {
   const isLeap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
   const maxByMonth = [31, isLeap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
@@ -99,7 +102,6 @@ function calcAge(dd: string, mm: string, yyyy: string) {
   if (Number.isNaN(birth.getTime())) return null;
 
   let age = now.getFullYear() - y;
-
   const thisYearsBirthday = new Date(now.getFullYear(), m - 1, d);
   if (now < thisYearsBirthday) age -= 1;
 
@@ -158,38 +160,6 @@ async function uploadPalmPhoto(
   }
 }
 
-/* простой SVG-образец (без отдельного файла) */
-const PALM_EXAMPLE_SVG = `data:image/svg+xml;utf8,${encodeURIComponent(`
-<svg xmlns="http://www.w3.org/2000/svg" width="900" height="1200" viewBox="0 0 900 1200">
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#0b1020"/>
-      <stop offset="1" stop-color="#0a0f1a"/>
-    </linearGradient>
-    <radialGradient id="glow" cx="50%" cy="20%" r="70%">
-      <stop offset="0" stop-color="rgba(210,179,91,0.35)"/>
-      <stop offset="1" stop-color="rgba(210,179,91,0)"/>
-    </radialGradient>
-  </defs>
-  <rect width="900" height="1200" rx="46" fill="url(#bg)"/>
-  <rect width="900" height="1200" rx="46" fill="url(#glow)"/>
-  <g transform="translate(120,130)" fill="none" stroke="rgba(233,236,255,0.85)" stroke-width="10" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M360 890c-120-40-190-140-190-260 0-80 30-150 90-200 30-25 45-55 45-95 0-70 58-125 130-125 30 0 60 10 82 28 40 32 55 70 55 120 0 45 18 75 48 102 62 56 95 120 95 205 0 150-98 270-255 325-35 12-70 12-100 0z" opacity="0.95"/>
-    <path d="M265 320c-15-60-10-140 35-195 45-55 110-72 150-55 40 17 68 70 55 125" opacity="0.7"/>
-    <path d="M180 430c-60-40-105-110-112-170-7-60 20-105 55-120 35-15 85 5 120 55" opacity="0.55"/>
-    <path d="M560 340c22-70 75-120 125-130 50-10 85 15 95 55 10 40-10 95-55 135" opacity="0.55"/>
-    <path d="M610 470c65-10 125 10 150 55 25 45 5 105-45 145" opacity="0.45"/>
-  </g>
-
-  <g transform="translate(140,860)" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial" fill="rgba(233,236,255,0.88)">
-    <text x="0" y="0" font-size="42" font-weight="800">Пример правильного фото</text>
-    <text x="0" y="52" font-size="28" fill="rgba(233,236,255,0.62)">
-      Ладонь целиком • без сильной тени • фокус на линиях
-    </text>
-  </g>
-</svg>
-`)}`;
-
 export default function PalmPage() {
   useEffect(() => {
     try {
@@ -209,7 +179,6 @@ export default function PalmPage() {
 
   const dobOk = useMemo(() => isDobPartsOk(dd.trim(), mm.trim(), yyyy.trim()), [dd, mm, yyyy]);
   const dobStr = useMemo(() => (dobOk ? formatDob(dd.trim(), mm.trim(), yyyy.trim()) : ''), [dobOk, dd, mm, yyyy]);
-
   const age = useMemo(() => (dobOk ? calcAge(dd.trim(), mm.trim(), yyyy.trim()) : null), [dobOk, dd, mm, yyyy]);
 
   const canShowDob = handedness !== null;
@@ -385,7 +354,6 @@ export default function PalmPage() {
         <div className="label center">Кто вы?</div>
         <div className="desc center">Выберите — чтобы мы правильно определили активную ладонь.</div>
 
-        {/* ✅ кнопки по центру */}
         <div className="handStack">
           <button type="button" className={`pill ${handedness === 'RIGHT' ? 'pill--on' : ''}`} onClick={() => setHand('RIGHT')}>
             Правша
@@ -425,8 +393,6 @@ export default function PalmPage() {
 
           {dd || mm || yyyy ? (dobOk ? <div className="hint center">Ок: {dobStr}</div> : <div className="warn center">Проверь дату.</div>) : null}
           {dobOk && handedness && !scanId ? <div className="hint center">Создаём черновик…</div> : null}
-
-          {/* ✅ вместо Scan ID */}
           {dobOk && age !== null ? <div className="hint center">Вам — <b>{age}</b> лет</div> : null}
         </section>
       ) : null}
@@ -518,7 +484,6 @@ export default function PalmPage() {
         </section>
       ) : null}
 
-      {/* ✅ модалка "Пример" */}
       {exampleOpen ? (
         <div className="modal" role="dialog" aria-modal="true" aria-label="Пример фото ладони" onClick={closeExample}>
           <div className="modalCard" onClick={(e) => e.stopPropagation()}>
@@ -531,8 +496,8 @@ export default function PalmPage() {
 
             <div className="modalBody">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img className="modalImg" src={PALM_EXAMPLE_SVG} alt="Пример фото ладони" />
-              <div className="modalHint">Совет: снимай при дневном свете, без бликов, ладонь целиком в кадре.</div>
+              <img className="modalImg" src={PALM_EXAMPLE_PHOTO_SRC} alt="Пример фото ладони" />
+              <div className="modalHint">Совет: дневной свет, без вспышки/бликов, ладонь целиком в кадре.</div>
             </div>
           </div>
         </div>
@@ -587,15 +552,7 @@ export default function PalmPage() {
           line-height: 1.05;
           margin: 0 0 6px;
           color: transparent;
-          background: linear-gradient(
-            115deg,
-            #fff3cf 0%,
-            #d2b35b 18%,
-            #f6e7b0 36%,
-            #b8892a 54%,
-            #fff3cf 72%,
-            #d2b35b 100%
-          );
+          background: linear-gradient(115deg, #fff3cf 0%, #d2b35b 18%, #f6e7b0 36%, #b8892a 54%, #fff3cf 72%, #d2b35b 100%);
           background-size: 220% 100%;
           -webkit-background-clip: text;
           background-clip: text;
@@ -646,11 +603,8 @@ export default function PalmPage() {
           line-height: 1.35;
         }
 
-        .center {
-          text-align: center;
-        }
+        .center { text-align: center; }
 
-        /* ✅ hand buttons centered */
         .handStack {
           margin-top: 6px;
           display: flex;
@@ -659,9 +613,10 @@ export default function PalmPage() {
           gap: 10px;
         }
 
+        /* ✅ железобетонное центрирование текста */
         .pill {
           width: 100%;
-          max-width: 280px;  /* ✅ центрированная ширина */
+          max-width: 280px;
           padding: 12px 12px;
           border-radius: 999px;
           border: 1px solid rgba(233, 236, 255, 0.14);
@@ -671,6 +626,10 @@ export default function PalmPage() {
           font-weight: 950;
           cursor: pointer;
           -webkit-tap-highlight-color: transparent;
+
+          display: flex;
+          align-items: center;
+          justify-content: center;
           text-align: center;
         }
 
@@ -679,16 +638,9 @@ export default function PalmPage() {
           box-shadow: 0 14px 38px rgba(0, 0, 0, 0.45);
         }
 
-        .pill:active {
-          transform: scale(0.98);
-          opacity: 0.92;
-        }
+        .pill:active { transform: scale(0.98); opacity: 0.92; }
 
-        .stack {
-          display: flex;
-          flex-direction: column;
-          gap: 10px;
-        }
+        .stack { display: flex; flex-direction: column; gap: 10px; }
 
         .hint {
           margin-top: 4px;
@@ -707,11 +659,7 @@ export default function PalmPage() {
           overflow-wrap: anywhere;
         }
 
-        .dob {
-          display: grid;
-          grid-template-columns: 1fr 1fr 1.35fr;
-          gap: 10px;
-        }
+        .dob { display: grid; grid-template-columns: 1fr 1fr 1.35fr; gap: 10px; }
 
         .dobField {
           border-radius: 16px;
@@ -786,23 +734,12 @@ export default function PalmPage() {
           overflow: hidden;
         }
 
-        .pick input {
-          display: none;
-        }
+        .pick input { display: none; }
 
-        .pick.is-loading {
-          opacity: 0.85;
-        }
+        .pick.is-loading { opacity: 0.85; }
+        .pick.is-disabled { opacity: 0.55; cursor: not-allowed; }
 
-        .pick.is-disabled {
-          opacity: 0.55;
-          cursor: not-allowed;
-        }
-
-        .pick:active {
-          transform: scale(0.98);
-          opacity: 0.92;
-        }
+        .pick:active { transform: scale(0.98); opacity: 0.92; }
 
         .meta {
           margin-top: 10px;
@@ -812,13 +749,8 @@ export default function PalmPage() {
           word-break: break-word;
         }
 
-        .metaLine + .metaLine {
-          margin-top: 4px;
-        }
-
-        .muted {
-          opacity: 0.7;
-        }
+        .metaLine + .metaLine { margin-top: 4px; }
+        .muted { opacity: 0.7; }
 
         .opt {
           width: 100%;
@@ -842,46 +774,15 @@ export default function PalmPage() {
           background: rgba(255, 255, 255, 0.04);
         }
 
-        .opt:active {
-          transform: scale(0.99);
-          opacity: 0.92;
-        }
+        .opt:active { transform: scale(0.99); opacity: 0.92; }
 
-        .optText {
-          min-width: 0;
-          flex: 1;
-        }
+        .optText { min-width: 0; flex: 1; }
+        .optT { font-weight: 950; color: rgba(233, 236, 255, 0.92); font-size: 14px; }
+        .optS { margin-top: 3px; font-size: 12px; color: rgba(233, 236, 255, 0.62); line-height: 1.25; }
 
-        .optT {
-          font-weight: 950;
-          color: rgba(233, 236, 255, 0.92);
-          font-size: 14px;
-        }
-
-        .optS {
-          margin-top: 3px;
-          font-size: 12px;
-          color: rgba(233, 236, 255, 0.62);
-          line-height: 1.25;
-        }
-
-        .optR {
-          width: 78px;
-          text-align: right;
-          font-weight: 950;
-          flex: 0 0 78px;
-        }
-
-        .tick {
-          color: rgba(210, 179, 91, 0.95);
-          font-size: 18px;
-        }
-
-        .plus {
-          color: rgba(233, 236, 255, 0.70);
-          font-size: 12px;
-          white-space: nowrap;
-        }
+        .optR { width: 78px; text-align: right; font-weight: 950; flex: 0 0 78px; }
+        .tick { color: rgba(210, 179, 91, 0.95); font-size: 18px; }
+        .plus { color: rgba(233, 236, 255, 0.70); font-size: 12px; white-space: nowrap; }
 
         .total {
           margin-top: 2px;
@@ -893,26 +794,9 @@ export default function PalmPage() {
           gap: 10px;
         }
 
-        .totalT {
-          font-weight: 950;
-          color: rgba(233, 236, 255, 0.92);
-          font-size: 14px;
-        }
-
-        .totalS {
-          margin-top: 3px;
-          font-size: 12px;
-          font-weight: 800;
-          color: rgba(233, 236, 255, 0.62);
-        }
-
-        .totalR {
-          font-weight: 950;
-          color: rgba(210, 179, 91, 0.95);
-          font-size: 16px;
-          letter-spacing: 0.02em;
-          white-space: nowrap;
-        }
+        .totalT { font-weight: 950; color: rgba(233, 236, 255, 0.92); font-size: 14px; }
+        .totalS { margin-top: 3px; font-size: 12px; font-weight: 800; color: rgba(233, 236, 255, 0.62); }
+        .totalR { font-weight: 950; color: rgba(210, 179, 91, 0.95); font-size: 16px; letter-spacing: 0.02em; white-space: nowrap; }
 
         .send {
           margin-top: 2px;
@@ -928,24 +812,13 @@ export default function PalmPage() {
           -webkit-tap-highlight-color: transparent;
         }
 
-        .send:active {
-          transform: scale(0.98);
-          opacity: 0.92;
-        }
+        .send:active { transform: scale(0.98); opacity: 0.92; }
 
-        .send--off {
-          opacity: 0.55;
-          cursor: not-allowed;
-          box-shadow: none;
-        }
+        .send--off { opacity: 0.55; cursor: not-allowed; box-shadow: none; }
 
         @media (max-width: 360px) {
-          .dob {
-            grid-template-columns: 1fr 1fr;
-          }
-          .dobField:last-child {
-            grid-column: 1 / -1;
-          }
+          .dob { grid-template-columns: 1fr 1fr; }
+          .dobField:last-child { grid-column: 1 / -1; }
         }
 
         /* ===== MODAL ===== */
@@ -997,6 +870,10 @@ export default function PalmPage() {
           font-weight: 950;
           cursor: pointer;
           -webkit-tap-highlight-color: transparent;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          text-align: center;
         }
 
         .modalBody {
