@@ -17,12 +17,6 @@ export default function HiromantBlock() {
     setOpen((v) => !v);
   };
 
-  const handleStartClick = () => {
-    haptic('medium');
-    // TODO: заменить на реальный путь старта Хироманта (например: router.push('/palm'))
-    console.log('open palm flow');
-  };
-
   const firstParagraph = useMemo(
     () => (
       <>
@@ -45,16 +39,11 @@ export default function HiromantBlock() {
 
           <div className="miniinfo-actions">
             <button type="button" className="miniinfo-btn miniinfo-btn--ghost" onClick={handleToggle}>
-              {open ? 'Скрыть' : 'Подробнее'}
-            </button>
-
-            <button type="button" className="miniinfo-btn" onClick={handleStartClick}>
-              Открыть «Хиромант»
+              {open ? 'Скрыть подробности' : 'Подробнее'}
             </button>
           </div>
 
           <div className={`miniinfo-more ${open ? 'is-open' : ''}`} aria-hidden={!open}>
-            {/* Остальное — раскрывается */}
             <div className="divider" />
 
             <p className="miniinfo-text">
@@ -161,34 +150,26 @@ export default function HiromantBlock() {
           color: rgba(233, 236, 255, 0.72);
         }
 
+        /* ✅ одна кнопка на всю ширину + ниже по высоте */
         .miniinfo-actions {
-          display: grid;
-          grid-template-columns: 1fr 1.35fr;
-          gap: 10px;
           margin-top: 12px;
         }
 
         .miniinfo-btn {
-          padding: 13px 16px;
           width: 100%;
+          padding: 9px 14px; /* ✅ ниже */
           border-radius: 999px;
-          border: 1px solid rgba(210, 179, 91, 0.4);
-          background: rgba(255, 255, 255, 0.04);
+          border: 1px solid rgba(233, 236, 255, 0.16);
+          background: rgba(255, 255, 255, 0.03);
           color: var(--text);
-          font-size: 14px;
+          font-size: 13px; /* ✅ чуть меньше */
           font-weight: 850;
           text-align: center;
           cursor: pointer;
           -webkit-tap-highlight-color: transparent;
-          box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(139, 92, 246, 0.1);
+          box-shadow: 0 14px 38px rgba(0, 0, 0, 0.45);
           backdrop-filter: blur(16px);
           -webkit-backdrop-filter: blur(16px);
-        }
-
-        .miniinfo-btn--ghost {
-          border-color: rgba(233, 236, 255, 0.16);
-          background: rgba(255, 255, 255, 0.03);
-          box-shadow: 0 14px 38px rgba(0, 0, 0, 0.45);
         }
 
         .miniinfo-btn:active {
@@ -202,7 +183,6 @@ export default function HiromantBlock() {
           margin: 14px 0 6px;
         }
 
-        /* раскрывашка */
         .miniinfo-more {
           max-height: 0;
           overflow: hidden;
@@ -214,7 +194,6 @@ export default function HiromantBlock() {
           opacity: 1;
         }
 
-        /* блоки 2-3 скрыты, пока не нажали подробнее */
         .is-hidden {
           display: none;
         }
