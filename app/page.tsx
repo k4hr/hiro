@@ -29,34 +29,10 @@ export default function HomePage() {
   }, []);
 
   const actions: Action[] = [
-    {
-      title: 'Ладонь',
-      subtitle: '2 фото → полный отчёт по линиям',
-      emoji: '🖐',
-      href: '/palm',
-      accent: 'green',
-    },
-    {
-      title: 'Код даты',
-      subtitle: 'Дата рождения → интерпретация чисел',
-      emoji: '🔢',
-      href: '/date-code',
-      accent: 'blue',
-    },
-    {
-      title: 'Карта рождения',
-      subtitle: 'Дата/время/город → глубже и “точнее”',
-      emoji: '⭐',
-      href: '/birth-chart',
-      accent: 'violet',
-    },
-    {
-      title: 'Синтез',
-      subtitle: 'Склеить всё → общий “вердикт”',
-      emoji: '🧬',
-      href: '/synth',
-      accent: 'amber',
-    },
+    { title: 'Ладонь', subtitle: '2 фото → полный отчёт по линиям', emoji: '🖐', href: '/palm', accent: 'green' },
+    { title: 'Код даты', subtitle: 'Дата рождения → интерпретация чисел', emoji: '🔢', href: '/date-code', accent: 'blue' },
+    { title: 'Карта рождения', subtitle: 'Дата/время/город → глубже и “точнее”', emoji: '⭐', href: '/birth-chart', accent: 'violet' },
+    { title: 'Синтез', subtitle: 'Склеить всё → общий “вердикт”', emoji: '🧬', href: '/synth', accent: 'amber' },
   ];
 
   const go = (href: string) => {
@@ -83,7 +59,12 @@ export default function HomePage() {
 
       <section className="grid" aria-label="Меню">
         {actions.map((a) => (
-          <button key={a.href} type="button" className={`card card--${a.accent ?? 'green'}`} onClick={() => go(a.href)}>
+          <button
+            key={a.href}
+            type="button"
+            className={`cardx cardx--${a.accent ?? 'green'}`}
+            onClick={() => go(a.href)}
+          >
             <div className="cardHead">
               <div className="emoji">{a.emoji}</div>
               <div className="cardText">
@@ -117,15 +98,15 @@ export default function HomePage() {
       <style jsx>{`
         .home {
           min-height: 100dvh;
-          padding: 16px 16px calc(env(safe-area-inset-bottom, 0px) + 24px);
-          background: radial-gradient(1200px 800px at 20% 10%, #f2f6ff 0%, #f7f7fb 42%, #ffffff 100%);
+          padding: 0 0 calc(env(safe-area-inset-bottom, 0px) + 12px);
+          /* фон НЕ задаём — его уже рисует .lm-bg в globals.css */
         }
 
         .top {
           display: flex;
           flex-direction: column;
           gap: 14px;
-          margin-top: 4px;
+          margin-top: 2px;
         }
 
         .brand {
@@ -134,10 +115,11 @@ export default function HomePage() {
           gap: 12px;
           padding: 12px 12px;
           border-radius: 18px;
-          background: rgba(255, 255, 255, 0.72);
-          border: 1px solid rgba(10, 12, 20, 0.08);
-          box-shadow: 0 12px 26px rgba(15, 23, 42, 0.06);
-          backdrop-filter: blur(10px);
+          background: var(--card-bg);
+          border: 1px solid var(--card-border);
+          box-shadow: var(--shadow);
+          backdrop-filter: blur(14px) saturate(140%);
+          -webkit-backdrop-filter: blur(14px) saturate(140%);
         }
 
         .logo {
@@ -146,40 +128,42 @@ export default function HomePage() {
           display: grid;
           place-items: center;
           border-radius: 14px;
-          background: rgba(45, 126, 247, 0.12);
-          border: 1px solid rgba(45, 126, 247, 0.18);
+          background: rgba(139, 92, 246, 0.14);
+          border: 1px solid rgba(233, 236, 255, 0.12);
+          box-shadow: 0 14px 30px rgba(0, 0, 0, 0.42);
           font-size: 22px;
         }
 
         .brandTitle {
           font-size: 16px;
-          font-weight: 800;
-          color: #0b0c10;
+          font-weight: 850;
+          color: var(--text);
           line-height: 1.1;
         }
         .brandSub {
           font-size: 12px;
-          color: rgba(11, 12, 16, 0.55);
+          color: var(--subtle);
           margin-top: 2px;
         }
 
         .hint {
           padding: 12px 12px;
           border-radius: 18px;
-          background: rgba(255, 255, 255, 0.62);
-          border: 1px solid rgba(10, 12, 20, 0.08);
-          box-shadow: 0 10px 22px rgba(15, 23, 42, 0.05);
-          backdrop-filter: blur(10px);
+          background: rgba(255, 255, 255, 0.05);
+          border: 1px solid var(--card-border);
+          box-shadow: var(--shadow);
+          backdrop-filter: blur(14px);
+          -webkit-backdrop-filter: blur(14px);
         }
         .hintTitle {
           font-size: 13px;
-          font-weight: 800;
-          color: #0b0c10;
+          font-weight: 850;
+          color: var(--text);
         }
         .hintSub {
           margin-top: 4px;
           font-size: 12px;
-          color: rgba(11, 12, 16, 0.62);
+          color: rgba(233, 236, 255, 0.68);
           line-height: 1.35;
         }
 
@@ -190,26 +174,26 @@ export default function HomePage() {
           gap: 10px;
         }
 
-        .card {
+        .cardx {
           width: 100%;
-          border: none;
+          border: 1px solid var(--card-border);
           padding: 14px 14px;
           border-radius: 20px;
-          background: rgba(255, 255, 255, 0.72);
-          border: 1px solid rgba(10, 12, 20, 0.08);
-          box-shadow: 0 14px 30px rgba(15, 23, 42, 0.06);
-          backdrop-filter: blur(10px);
+          background: var(--card-bg);
+          box-shadow: var(--shadow);
+          backdrop-filter: blur(14px) saturate(140%);
+          -webkit-backdrop-filter: blur(14px) saturate(140%);
           display: flex;
           align-items: center;
           justify-content: space-between;
           cursor: pointer;
           -webkit-tap-highlight-color: transparent;
-          transition: transform 0.08s ease, box-shadow 0.08s ease, opacity 0.08s ease;
+          transition: transform 0.08s ease, box-shadow 0.08s ease, opacity 0.08s ease, border-color 0.12s ease;
+          color: inherit;
         }
-        .card:active {
+        .cardx:active {
           transform: scale(0.99);
           opacity: 0.92;
-          box-shadow: 0 10px 22px rgba(15, 23, 42, 0.07);
         }
 
         .cardHead {
@@ -225,44 +209,42 @@ export default function HomePage() {
           place-items: center;
           border-radius: 16px;
           font-size: 22px;
-          border: 1px solid transparent;
+          border: 1px solid rgba(233, 236, 255, 0.12);
+          box-shadow: 0 14px 30px rgba(0, 0, 0, 0.42);
         }
 
         .cardTitle {
           font-size: 15px;
           font-weight: 850;
-          color: #0b0c10;
+          color: var(--text);
           line-height: 1.1;
         }
         .cardSub {
           margin-top: 3px;
           font-size: 12px;
-          color: rgba(11, 12, 16, 0.58);
+          color: rgba(233, 236, 255, 0.62);
           line-height: 1.25;
         }
 
         .chev {
           font-size: 26px;
           line-height: 1;
-          color: rgba(11, 12, 16, 0.28);
+          color: rgba(233, 236, 255, 0.32);
           padding-left: 10px;
         }
 
-        .card--green .emoji {
+        /* акцентные “ауры” на иконках */
+        .cardx--green .emoji {
           background: rgba(36, 199, 104, 0.12);
-          border-color: rgba(36, 199, 104, 0.18);
         }
-        .card--blue .emoji {
-          background: rgba(45, 126, 247, 0.12);
-          border-color: rgba(45, 126, 247, 0.18);
+        .cardx--blue .emoji {
+          background: rgba(45, 126, 247, 0.14);
         }
-        .card--violet .emoji {
-          background: rgba(139, 92, 246, 0.12);
-          border-color: rgba(139, 92, 246, 0.18);
+        .cardx--violet .emoji {
+          background: rgba(139, 92, 246, 0.16);
         }
-        .card--amber .emoji {
-          background: rgba(245, 158, 11, 0.12);
-          border-color: rgba(245, 158, 11, 0.18);
+        .cardx--amber .emoji {
+          background: rgba(245, 158, 11, 0.14);
         }
 
         .secondary {
@@ -270,27 +252,29 @@ export default function HomePage() {
           display: flex;
           gap: 10px;
         }
+
         .miniBtn {
           flex: 1;
           padding: 12px 10px;
           border-radius: 16px;
-          border: 1px solid rgba(10, 12, 20, 0.08);
-          background: rgba(255, 255, 255, 0.72);
-          color: #0b0c10;
+          border: 1px solid var(--card-border);
+          background: var(--card-bg);
+          color: var(--text);
           font-size: 13px;
-          font-weight: 750;
+          font-weight: 800;
           cursor: pointer;
           -webkit-tap-highlight-color: transparent;
-          box-shadow: 0 12px 26px rgba(15, 23, 42, 0.05);
-          backdrop-filter: blur(10px);
+          box-shadow: var(--shadow);
+          backdrop-filter: blur(14px);
+          -webkit-backdrop-filter: blur(14px);
         }
         .miniBtn:active {
           transform: scale(0.99);
           opacity: 0.92;
         }
         .miniBtn--outline {
-          background: rgba(255, 255, 255, 0.55);
-          border-color: rgba(45, 126, 247, 0.22);
+          background: rgba(255, 255, 255, 0.04);
+          border-color: rgba(139, 92, 246, 0.30);
         }
 
         .foot {
@@ -299,19 +283,21 @@ export default function HomePage() {
         .note {
           padding: 12px 12px;
           border-radius: 18px;
-          background: rgba(255, 255, 255, 0.55);
-          border: 1px solid rgba(10, 12, 20, 0.08);
-          backdrop-filter: blur(10px);
+          background: rgba(255, 255, 255, 0.05);
+          border: 1px solid var(--card-border);
+          box-shadow: var(--shadow);
+          backdrop-filter: blur(14px);
+          -webkit-backdrop-filter: blur(14px);
         }
         .noteTitle {
           font-size: 12px;
-          font-weight: 800;
-          color: #0b0c10;
+          font-weight: 850;
+          color: var(--text);
         }
         .noteSub {
           margin-top: 4px;
           font-size: 12px;
-          color: rgba(11, 12, 16, 0.55);
+          color: rgba(233, 236, 255, 0.60);
           line-height: 1.35;
         }
       `}</style>
