@@ -1,34 +1,41 @@
 /* path: app/globals.css */
 
-/* ===== Палитра и базовая (всегда СВЕТЛАЯ) тема ===== */
+/* ===========================
+   🌑 МИСТИЧЕСКАЯ ТЁМНАЯ ТЕМА
+   =========================== */
+
 :root {
-  color-scheme: light;
+  color-scheme: dark;
 
-  --text: #0B0C10;
-  --fg: #0B0C10;
+  /* текст */
+  --text: #E9ECFF;
+  --fg: #E9ECFF;
+  --subtle: rgba(233, 236, 255, 0.62);
 
-  --subtle: rgba(11,12,16,.55);
-  --border: rgba(10,12,20,.08);
+  /* фон */
+  --bg1: #070814;
+  --bg2: #0B0D1F;
 
-  --bg1: #F5F7FA;
-  --bg2: #FFFFFF;
+  /* бордеры/стекло */
+  --border: rgba(233, 236, 255, 0.10);
+  --card-bg: rgba(255, 255, 255, 0.06);
+  --card-border: rgba(233, 236, 255, 0.12);
+  --card-hover: rgba(139, 92, 246, 0.10);
 
-  --card-bg: rgba(255,255,255,.68);
-  --card-border: rgba(10,12,20,.08);
-  --card-hover: rgba(45,126,247,.06);
   --radius: 16px;
-  --shadow: 0 8px 24px rgba(18,28,45,.10);
+  --shadow: 0 14px 38px rgba(0, 0, 0, 0.45);
 
-  --brand: #2D7EF7;
-  --accent: #24C768;
+  /* акценты */
+  --brand: #8B5CF6;   /* мистический фиолетовый */
+  --accent: #2D7EF7;  /* холодный синий */
+  --glow: rgba(139, 92, 246, 0.28);
 
   --pro: var(--brand);
-  --proplus: #f59e0b;
+  --proplus: #F59E0B;
 
   --tg-viewport-height: 100vh;
 
-  /* ✅ Safe top ДОЛЖЕН быть.
-     Фолбэк через iOS safe-area, а точное значение лучше выставит TelegramNoSwipeInit (JS). */
+  /* ✅ Safe top */
   --lm-safe-top: env(safe-area-inset-top, 0px);
 }
 
@@ -40,6 +47,7 @@ html {
   -webkit-text-size-adjust: 100%;
   overscroll-behavior: none;
   height: 100%;
+  background: var(--bg1);
 }
 
 body {
@@ -58,39 +66,50 @@ body {
   overscroll-behavior: none;
 }
 
-/* Светлая «живая» подложка */
+/* 🌌 Тёмная «живая» подложка */
 .lm-bg {
-  position: fixed; inset: 0; z-index: -1;
+  position: fixed;
+  inset: 0;
+  z-index: -1;
   background:
-    radial-gradient(900px 600px at 80% -10%, rgba(45,126,247,.10), transparent 60%),
-    radial-gradient(700px 500px at -10% 100%, rgba(36,199,104,.10), transparent 60%),
+    radial-gradient(900px 650px at 18% 12%, rgba(139, 92, 246, 0.22), transparent 60%),
+    radial-gradient(900px 650px at 82% 18%, rgba(45, 126, 247, 0.18), transparent 60%),
+    radial-gradient(1000px 800px at 50% 92%, rgba(36, 199, 104, 0.10), transparent 62%),
+    radial-gradient(1200px 900px at 50% 50%, rgba(255, 255, 255, 0.035), transparent 58%),
+    radial-gradient(1400px 1100px at 50% 50%, rgba(0, 0, 0, 0.0) 0%, rgba(0, 0, 0, 0.60) 72%, rgba(0, 0, 0, 0.82) 100%),
     linear-gradient(180deg, var(--bg1) 0%, var(--bg2) 100%);
-  filter: blur(0px);
+}
+
+/* зерно поверх — мистичнее и дороже */
+.lm-bg::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  opacity: 0.08;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='.55'/%3E%3C/svg%3E");
+  background-size: 160px 160px;
+  mix-blend-mode: overlay;
+  pointer-events: none;
 }
 
 /* Контейнер страницы — основной scroll-container */
 .lm-page {
-  /* ✅ оставляем твой базовый отступ 16px (важно для TopBar margin: 0 -16px) */
   padding-left: 16px;
   padding-right: 16px;
   padding-bottom: 16px;
-
-  /* ✅ добавляем safe-top ТОЛЬКО сверху */
   padding-top: calc(var(--lm-safe-top, 0px) + 16px);
 
-  /* ✅ КЛЮЧЕВОЕ: на мобилке НЕ центрируем, иначе 100vw/негативные маргины режутся */
   width: 100%;
   max-width: 100%;
   margin: 0;
 
   height: var(--tg-viewport-height, 100vh);
   overflow-y: auto;
-  overflow-x: hidden; /* ✅ режем только горизонталь внутри скролл-контейнера */
+  overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
 }
 
-/* ✅ А вот на широких экранах можно возвращать "красивую" центровку */
 @media (min-width: 920px) {
   .lm-page {
     max-width: 900px;
@@ -108,87 +127,132 @@ h1 { font-weight: 800; letter-spacing: -0.02em; margin: 12px 0 8px; }
 
 /* ===== Карточки ===== */
 .card {
-  display:flex; align-items:center; justify-content:space-between;
-  padding:16px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  padding: 16px 16px;
   border-radius: var(--radius);
+
   background: var(--card-bg);
-  border:1px solid var(--card-border);
-  color:inherit; text-decoration:none;
+  border: 1px solid var(--card-border);
+
+  color: inherit;
+  text-decoration: none;
+
   box-shadow: var(--shadow);
-  backdrop-filter: blur(12px) saturate(140%);
-  transition: transform .08s ease, border-color .15s ease, background .15s ease;
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+
+  transition: transform .08s ease, border-color .15s ease, background .15s ease, box-shadow .15s ease;
   -webkit-tap-highlight-color: transparent;
   position: relative;
 }
-.card::before{
-  content:''; position:absolute; inset:0; border-radius:var(--radius);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.65);
-  pointer-events:none;
+
+.card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .10),
+    inset 0 -1px 0 rgba(0, 0, 0, .35);
+  pointer-events: none;
 }
+
 .card:hover {
   transform: translateY(-1px);
-  border-color: var(--brand);
+  border-color: rgba(139, 92, 246, 0.55);
   background: color-mix(in srgb, var(--card-bg) 85%, var(--card-hover));
+  box-shadow: 0 18px 46px rgba(0, 0, 0, 0.55);
 }
+
 .card:active { transform: translateY(0); }
-.card__left { display:flex; align-items:center; gap:12px; }
+
+.card__left { display: flex; align-items: center; gap: 12px; }
+
 .card__icon {
-  font-size:22px; line-height:1; width:36px; height:36px;
-  display:grid; place-items:center; border-radius:10px;
-  background: linear-gradient(135deg, rgba(45,126,247,.14), rgba(36,199,104,.10));
+  font-size: 22px;
+  line-height: 1;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(139, 92, 246, .22), rgba(45, 126, 247, .12));
+  border: 1px solid rgba(233, 236, 255, 0.10);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(139, 92, 246, 0.10);
 }
-.card__title { font-weight:700; }
-.card__chev { opacity:.45; }
+
+.card__title { font-weight: 700; }
+.card__chev { opacity: .55; }
 
 .card--pro .card__icon {
-  background: linear-gradient(135deg, rgba(45,126,247,.16), rgba(59,130,246,.12));
+  background: linear-gradient(135deg, rgba(139, 92, 246, .26), rgba(45, 126, 247, .12));
 }
 .card--proplus .card__icon {
-  background: linear-gradient(135deg, rgba(245,158,11,.18), rgba(251,191,36,.14));
+  background: linear-gradient(135deg, rgba(245, 158, 11, .22), rgba(251, 191, 36, .14));
 }
-.badge { margin-left:6px; font-weight:700; color: var(--brand); }
+
+.badge { margin-left: 6px; font-weight: 700; color: var(--brand); }
 .badge--gold { color: var(--proplus); }
 
 /* ===== Чип «Назад» ===== */
 .back-chip {
-  display:inline-flex; align-items:center; gap:8px;
-  border:1px solid var(--card-border);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--card-border);
   background: var(--card-bg);
-  padding:8px 12px; border-radius:999px;
+  padding: 8px 12px;
+  border-radius: 999px;
   box-shadow: var(--shadow);
-  backdrop-filter: blur(10px);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
-.back-chip:hover { border-color: var(--brand); }
+
+.back-chip:hover { border-color: rgba(139, 92, 246, 0.55); }
 
 /* ===== Совместимость с текущими кнопками ===== */
 .list-btn {
-  display:flex; align-items:center; justify-content:space-between;
-  padding:14px 16px; border-radius:12px;
-  background: var(--card-bg); border:1px solid var(--card-border);
-  color:inherit; box-shadow: var(--shadow);
-  backdrop-filter: blur(10px);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  color: inherit;
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
-.list-btn__left { display:flex; align-items:center; gap:10px; }
-.list-btn__right { opacity:.7; }
-.list-btn__emoji { width:26px; display:inline-flex; justify-content:center; }
+
+.list-btn__left { display: flex; align-items: center; gap: 10px; }
+.list-btn__right { opacity: .72; }
+.list-btn__emoji { width: 26px; display: inline-flex; justify-content: center; }
 
 .ghost-link {
-  display:inline-flex; align-items:center; gap:8px;
-  padding:10px 14px; border-radius:10px;
-  border:1px dashed color-mix(in srgb, var(--brand) 55%, #8aa7ff 45%);
-  background: rgba(45,126,247,.08);
-  color: color-mix(in srgb, var(--brand) 70%, #3b82f6 30%);
-  font-weight:600;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px dashed rgba(139, 92, 246, 0.55);
+  background: rgba(139, 92, 246, 0.10);
+  color: rgba(233, 236, 255, 0.86);
+  font-weight: 600;
   transition: transform .12s ease, background .12s ease, border-color .12s ease;
 }
+
 .ghost-link:hover {
   transform: translateY(-1px);
-  background: rgba(45,126,247,.12);
-  border-color: color-mix(in srgb, var(--brand) 80%, #8aa7ff 20%);
+  background: rgba(139, 92, 246, 0.14);
+  border-color: rgba(139, 92, 246, 0.70);
 }
 
 /* =============================== */
-/* Chat composer (универсальный фикс под iOS 17/18) — СВЕТЛЫЙ */
+/* Chat composer — ТЁМНЫЙ */
 /* =============================== */
 
 .lm-composer {
@@ -209,41 +273,54 @@ h1 { font-weight: 800; letter-spacing: -0.02em; margin: 12px 0 8px; }
   height: var(--h);
   width: var(--h);
   border-radius: 12px;
-  border: 1px solid rgba(10,12,20,.10);
-  background: rgba(255,255,255,.78);
+  border: 1px solid rgba(233, 236, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
   display: grid;
   place-items: center;
   line-height: 1;
   -webkit-appearance: none;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.6), 0 10px 26px rgba(18,28,45,.12);
-  backdrop-filter: blur(10px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.10),
+    0 16px 36px rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
 }
+
 .lm-composer__btn svg,
 .lm-composer__btn i,
-.lm-composer__btn span { display:block; }
+.lm-composer__btn span { display: block; }
 
 .lm-composer__field {
   min-height: var(--h);
   height: var(--h);
   border-radius: var(--r);
-  border: 1px solid rgba(10,12,20,.10);
-  background: rgba(255,255,255,.78);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.6), 0 10px 26px rgba(18,28,45,.12);
+  border: 1px solid rgba(233, 236, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.10),
+    0 16px 36px rgba(0, 0, 0, 0.55);
   padding: 0 14px;
   display: flex;
   align-items: center;
   line-height: 1.2;
   font-size: 16px;
   color: var(--text);
-  backdrop-filter: blur(10px);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
 }
+
 .lm-composer__field textarea,
 .lm-composer__field input[type="text"],
 .lm-composer__field input[type="search"] {
-  width: 100%; height: 100%;
-  resize: none; border: 0; outline: none;
-  background: transparent; color: inherit;
-  line-height: 1.2; padding: 0;
+  width: 100%;
+  height: 100%;
+  resize: none;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  line-height: 1.2;
+  padding: 0;
 }
 
 .lm-composer, .lm-composer * {
@@ -303,29 +380,51 @@ input, textarea, select,
 
 .tools-equal .card a.list-btn { text-decoration: none; }
 
-.pill { display:inline-flex; align-items:center; gap:6px; padding:6px 10px;
-  border-radius:999px; border:1px solid var(--card-border);
-  background: var(--card-bg); color: var(--subtle);
-  box-shadow: var(--shadow); backdrop-filter: blur(10px);
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--card-border);
+  background: var(--card-bg);
+  color: var(--subtle);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
-.divider { height:1px; background: rgba(10,12,20,.06); }
+
+.divider { height: 1px; background: rgba(233, 236, 255, 0.10); }
+
 .shimmer {
-  background: linear-gradient(110deg, rgba(10,12,20,0.04) 8%, rgba(10,12,20,0.10) 18%, rgba(10,12,20,0.04) 33%);
-  background-size: 200% 100%; animation: shimmer 1.1s linear infinite;
+  background: linear-gradient(
+    110deg,
+    rgba(255,255,255,0.04) 8%,
+    rgba(255,255,255,0.10) 18%,
+    rgba(255,255,255,0.04) 33%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.1s linear infinite;
 }
 @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
 
+/* HERO / GOLD — оставляем, но под тёмную тему */
 .hero-card{
   background:
-    linear-gradient(135deg, rgba(255,207,92,.22), rgba(255,184,58,.18)),
-    rgba(255,255,255,.32);
-  border:1px solid rgba(255,195,82,.55);
-  box-shadow:0 14px 36px rgba(255,191,73,.28), inset 0 1px 0 rgba(255,255,255,.6);
+    linear-gradient(135deg, rgba(139, 92, 246, .18), rgba(45, 126, 247, .12)),
+    rgba(255,255,255,.05);
+  border: 1px solid rgba(139, 92, 246, .38);
+  box-shadow: 0 18px 52px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.10);
 }
+
 .gold-text{
   font-family: Montserrat, Manrope, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial;
-  background:linear-gradient(180deg,#7b5b1a 0%,#4b3513 34%,#3a2a12 58%,#d5b461 100%);
-  -webkit-background-clip:text; background-clip:text; color:transparent;
-  text-shadow:0 1px 0 rgba(255,255,255,.35),0 10px 24px rgba(215,170,60,.18);
-  letter-spacing:.4px; font-weight:800; text-transform:uppercase;
+  background: linear-gradient(180deg, #f6e7b0 0%, #d2b35b 34%, #b8892a 58%, #fff0b8 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: 0 1px 0 rgba(255,255,255,.12), 0 16px 40px rgba(0,0,0,.55);
+  letter-spacing: .4px;
+  font-weight: 800;
+  text-transform: uppercase;
 }
