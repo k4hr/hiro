@@ -2,7 +2,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 
 function tg(): any | null {
   try {
@@ -99,8 +99,65 @@ function safeSelectedFromDb(input: any): Record<OptionKey, boolean> | null {
   }
 }
 
+function optionTitle(k: OptionKey) {
+  switch (k) {
+    case 'HEART':
+      return 'Линия Сердца';
+    case 'HEAD':
+      return 'Линия Головы';
+    case 'LIFE':
+      return 'Линия Жизни';
+    case 'FATE':
+      return 'Линия Судьбы';
+    case 'SUN':
+      return 'Линия Солнца';
+    case 'MERCURY':
+      return 'Линия Меркурия';
+    case 'MOUNTS':
+      return 'Горы ладони';
+    case 'HANDS_DIFF':
+      return 'Разница между руками';
+    default:
+      return String(k);
+  }
+}
+
+function buildShareUrl(): string {
+  const envUrl = (process.env.NEXT_PUBLIC_TMA_SHARE_URL || '').trim();
+  if (envUrl) return envUrl;
+
+  try {
+    const u = new URL(window.location.href);
+    // делимся входом в приложение, а не конкретным scanId
+    return `${u.origin}/palm`;
+  } catch {
+    return '/palm';
+  }
+}
+
+function openShare() {
+  haptic('medium');
+
+  const url = buildShareUrl();
+  const text = 'Смотри разбор ладони в мини-приложении';
+  const shareLink = `https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`;
+
+  try {
+    const w = tg();
+    if (w?.openTelegramLink) {
+      w.openTelegramLink(shareLink);
+      return;
+    }
+  } catch {}
+
+  try {
+    window.open(shareLink, '_blank');
+  } catch {
+    window.location.href = shareLink;
+  }
+}
+
 export default function ReportClient() {
-  const router = useRouter();
   const sp = useSearchParams();
   const scanId = String(sp.get('scanId') || '').trim();
 
@@ -116,12 +173,12 @@ export default function ReportClient() {
 
   const selectedForUi = payload?.selected ?? dbSelected;
 
-  const selectedKeys = useMemo(() => {
+  const selectedKeysRu = useMemo(() => {
     const s = selectedForUi;
     if (!s) return [];
     return Object.entries(s)
       .filter(([, v]) => v)
-      .map(([k]) => k);
+      .map(([k]) => optionTitle(k as OptionKey));
   }, [selectedForUi]);
 
   useEffect(() => {
@@ -189,7 +246,7 @@ export default function ReportClient() {
         return;
       }
 
-      setInfo('Отчёт ещё не создан. Сейчас можно запустить анализ.');
+      setInfo('Отчёт ещё не создан. Сейчас запустим анализ.');
       setLoading(false);
 
       const s = payload?.selected ?? selFromDb;
@@ -208,13 +265,7 @@ export default function ReportClient() {
     }
   };
 
-  const runAnalyze = async (p: {
-    scanId: string;
-    handedness: Handedness;
-    dob: string;
-    age: any;
-    selected: Record<OptionKey, boolean>;
-  }) => {
+  const runAnalyze = async (p: { scanId: string; handedness: Handedness; dob: string; age: any; selected: Record<OptionKey, boolean> }) => {
     const initData = getInitDataNow();
     if (!initData) {
       setErr('NO_INIT_DATA');
@@ -255,61 +306,20 @@ export default function ReportClient() {
     }
   };
 
-  const goBack = () => {
-    haptic('light');
-    router.push('/palm');
-  };
-
-  const retry = () => {
-    haptic('medium');
-    fetchFromDb();
-  };
-
-  const forceAnalyze = () => {
-    haptic('medium');
-
-    const sel = payload?.selected ?? dbSelected;
-    const repInput = dbReport?.input ?? null;
-
-    const handedness = (payload?.handedness ?? (repInput?.handedness as Handedness) ?? null) as Handedness | null;
-    const dob = String(payload?.dob ?? repInput?.dob ?? '');
-    const age = payload?.age ?? (repInput?.age ?? null);
-
-    if (!sel) {
-      setErr('NO_SELECTED_IN_DB');
-      setInfo('Нет сохранённых пунктов выбора. Нажми “Скан заново” и пройди шаг выбора пунктов.');
-      return;
-    }
-    if (!handedness || !dob) {
-      setErr('NO_INPUT_FOR_ANALYZE');
-      setInfo('Не хватает данных для пересоздания. Нажми “Скан заново”.');
-      return;
-    }
-
-    runAnalyze({ scanId, handedness, dob, age, selected: sel });
-  };
-
   const showMeta = Boolean(payload || scanStatus || dbSelected);
+  const ready = Boolean(text) && !loading && !err;
 
   return (
     <main className="p">
       <header className="hero">
         <div className="title">РАЗБОР</div>
-        <div className="subtitle">ПРОХОДИТ АНАЛИЗ...</div>
+        <div className="subtitle">{ready ? 'ОТЧЁТ ГОТОВ' : loading ? 'ПРОХОДИТ АНАЛИЗ...' : 'ЗАГРУЗКА...'}</div>
       </header>
 
       {err ? (
         <section className="card">
           <div className="label">Ошибка</div>
           <div className="warn">{err}</div>
-          <div className="row">
-            <button type="button" className="btn" onClick={retry} disabled={loading}>
-              Обновить
-            </button>
-            <button type="button" className="btn2" onClick={goBack}>
-              Назад
-            </button>
-          </div>
         </section>
       ) : null}
 
@@ -339,15 +349,13 @@ export default function ReportClient() {
               </div>
             ) : null}
 
-            {selectedKeys.length ? (
+            {selectedKeysRu.length ? (
               <div className="metaLine">
-                <b>Пункты:</b> {selectedKeys.join(', ')}
+                <b>Пункты:</b> {selectedKeysRu.join(', ')}
               </div>
             ) : (
               <div className="metaLine muted">Пункты не найдены.</div>
             )}
-
-            {!payload ? <div className="metaLine muted">Параметры подтянуты из БД (можно открывать позже и пересоздавать).</div> : null}
           </div>
         </section>
       ) : null}
@@ -360,22 +368,11 @@ export default function ReportClient() {
 
         {text ? <pre className="out">{text}</pre> : null}
 
-        <div className="row">
-          <button type="button" className="btn" onClick={retry} disabled={loading}>
-            Обновить из БД
+        {ready ? (
+          <button type="button" className="share" onClick={openShare}>
+            Поделиться
           </button>
-          <button type="button" className="btn2" onClick={goBack}>
-            Скан заново
-          </button>
-        </div>
-
-        <div className="row">
-          <button type="button" className="btn3" onClick={forceAnalyze} disabled={loading}>
-            Пересоздать отчёт (OpenAI)
-          </button>
-        </div>
-
-        <div className="disclaimer">Это не медицина и не диагностика здоровья.</div>
+        ) : null}
       </section>
 
       <style jsx>{`
@@ -481,56 +478,22 @@ export default function ReportClient() {
           word-break: break-word;
         }
 
-        .row {
-          display: flex;
-          gap: 10px;
-          margin-top: 4px;
-        }
-
-        .btn,
-        .btn2,
-        .btn3 {
-          flex: 1;
+        .share {
+          margin-top: 8px;
+          border: 1px solid rgba(210, 179, 91, 0.35);
           border-radius: 999px;
           padding: 12px 14px;
           font-size: 14px;
           font-weight: 950;
-          cursor: pointer;
-          -webkit-tap-highlight-color: transparent;
-        }
-
-        .btn {
-          border: 1px solid rgba(210, 179, 91, 0.35);
           color: var(--text);
+          cursor: pointer;
           background: rgba(255, 255, 255, 0.04);
           box-shadow: 0 14px 38px rgba(0, 0, 0, 0.45);
+          -webkit-tap-highlight-color: transparent;
         }
-        .btn:disabled {
-          opacity: 0.55;
-          cursor: not-allowed;
-          box-shadow: none;
-        }
-
-        .btn2 {
-          border: 1px solid rgba(233, 236, 255, 0.14);
-          color: rgba(233, 236, 255, 0.92);
-          background: rgba(255, 255, 255, 0.03);
-        }
-
-        .btn3 {
-          border: 1px solid rgba(233, 236, 255, 0.14);
-          color: rgba(233, 236, 255, 0.92);
-          background: rgba(255, 255, 255, 0.02);
-        }
-
-        .disclaimer {
-          margin-top: 8px;
-          padding-top: 10px;
-          border-top: 1px solid rgba(233, 236, 255, 0.1);
-          font-size: 12px;
-          font-weight: 800;
-          color: rgba(233, 236, 255, 0.58);
-          line-height: 1.35;
+        .share:active {
+          transform: scale(0.98);
+          opacity: 0.92;
         }
       `}</style>
     </main>
