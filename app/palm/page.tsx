@@ -1,7 +1,7 @@
 /* path: app/palm/page.tsx */
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 function haptic(type: 'light' | 'medium' = 'light') {
   try {
@@ -30,26 +30,47 @@ type OptionKey =
 
 const PRICE_RUB = 19;
 
-function isDobLikeRu(s: string) {
-  // dd.mm.yyyy (грубая валидация)
-  if (!/^\d{2}\.\d{2}\.\d{4}$/.test(s)) return false;
-  const [ddStr, mmStr, yyyyStr] = s.split('.');
-  const dd = Number(ddStr);
-  const mm = Number(mmStr);
-  const yyyy = Number(yyyyStr);
-  if (!dd || !mm || !yyyy) return false;
-  if (yyyy < 1900 || yyyy > 2100) return false;
-  if (mm < 1 || mm > 12) return false;
+function clampInt(v: string, min: number, max: number) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return '';
+  const x = Math.max(min, Math.min(max, Math.trunc(n)));
+  return String(x);
+}
 
-  const maxByMonth = [31, (yyyy % 4 === 0 && (yyyy % 100 !== 0 || yyyy % 400 === 0)) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-  if (dd < 1 || dd > maxByMonth[mm - 1]) return false;
+function daysInMonth(year: number, month: number) {
+  const isLeap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const maxByMonth = [31, isLeap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return maxByMonth[month - 1] ?? 31;
+}
+
+function isDobPartsOk(dd: string, mm: string, yyyy: string) {
+  if (!dd || !mm || !yyyy) return false;
+  if (!/^\d{1,2}$/.test(dd)) return false;
+  if (!/^\d{1,2}$/.test(mm)) return false;
+  if (!/^\d{4}$/.test(yyyy)) return false;
+
+  const d = Number(dd);
+  const m = Number(mm);
+  const y = Number(yyyy);
+  if (!d || !m || !y) return false;
+  if (y < 1900 || y > 2100) return false;
+  if (m < 1 || m > 12) return false;
+
+  const dim = daysInMonth(y, m);
+  if (d < 1 || d > dim) return false;
   return true;
 }
 
-async function uploadToR2(file: File, kind: 'left' | 'right'): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
-  // 🔧 Тут будет твой реальный API под Cloudflare R2.
-  // Ожидаем, что он вернёт { ok: true, url }.
-  // Пока — мягкая заглушка, чтобы UI работал.
+function formatDob(dd: string, mm: string, yyyy: string) {
+  const d = dd.padStart(2, '0');
+  const m = mm.padStart(2, '0');
+  return `${d}.${m}.${yyyy}`;
+}
+
+async function uploadToR2(
+  file: File,
+  kind: 'left' | 'right'
+): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
   try {
     const fd = new FormData();
     fd.append('file', file);
@@ -77,8 +98,16 @@ export default function PalmPage() {
   }, []);
 
   const [handedness, setHandedness] = useState<Handedness | null>(null);
-  const [dob, setDob] = useState('');
-  const dobOk = useMemo(() => isDobLikeRu(dob.trim()), [dob]);
+
+  const [dd, setDd] = useState('');
+  const [mm, setMm] = useState('');
+  const [yyyy, setYyyy] = useState('');
+
+  const mmRef = useRef<HTMLInputElement | null>(null);
+  const yyyyRef = useRef<HTMLInputElement | null>(null);
+
+  const dobOk = useMemo(() => isDobPartsOk(dd.trim(), mm.trim(), yyyy.trim()), [dd, mm, yyyy]);
+  const dobStr = useMemo(() => (dobOk ? formatDob(dd.trim(), mm.trim(), yyyy.trim()) : ''), [dobOk, dd, mm, yyyy]);
 
   const [left, setLeft] = useState<UploadState>({ uploading: false });
   const [right, setRight] = useState<UploadState>({ uploading: false });
@@ -154,15 +183,31 @@ export default function PalmPage() {
 
   const onSubmit = () => {
     haptic('medium');
-    // TODO: собрать payload и отправить на /api/analyze-palm (когда сделаем)
     console.log('submit', {
       handedness,
-      dob,
+      dob: dobStr,
       leftUrl: left.url,
       rightUrl: right.url,
       selected,
       totalRub,
     });
+  };
+
+  const onDayChange = (v: string) => {
+    const clean = v.replace(/\D/g, '').slice(0, 2);
+    setDd(clean);
+    if (clean.length === 2) mmRef.current?.focus();
+  };
+
+  const onMonthChange = (v: string) => {
+    const clean = v.replace(/\D/g, '').slice(0, 2);
+    setMm(clean);
+    if (clean.length === 2) yyyyRef.current?.focus();
+  };
+
+  const onYearChange = (v: string) => {
+    const clean = v.replace(/\D/g, '').slice(0, 4);
+    setYyyy(clean);
   };
 
   return (
@@ -172,12 +217,12 @@ export default function PalmPage() {
         <div className="subtitle">две ладони · один отчёт</div>
       </header>
 
-      {/* Шаг 1 — рука */}
+      {/* Шаг 1 — рука (ВСЁ ВЕРТИКАЛЬНО) */}
       <section className="card" aria-label="Выбор ведущей руки">
         <div className="cardTitle">Кто вы?</div>
         <div className="cardSub">Выберите — чтобы мы правильно определили активную ладонь.</div>
 
-        <div className="chips">
+        <div className="chips-col">
           <button type="button" className={`chip ${handedness === 'RIGHT' ? 'chip--on' : ''}`} onClick={() => setHand('RIGHT')}>
             Правша
           </button>
@@ -192,23 +237,56 @@ export default function PalmPage() {
         {handedness ? <div className="hint">{activeHandText}</div> : null}
       </section>
 
-      {/* Шаг 2 — дата */}
+      {/* Шаг 2 — дата (3 поля: день/месяц/год) */}
       {canShowDob ? (
         <section className="card" aria-label="Дата рождения">
           <div className="cardTitle">Дата рождения</div>
-          <div className="cardSub">Формат: дд.мм.гггг</div>
+          <div className="cardSub">Введите день, месяц и год.</div>
 
-          <div className={`field ${dob.length > 0 && !dobOk ? 'field--bad' : ''}`}>
-            <input
-              value={dob}
-              onChange={(e) => setDob(e.target.value)}
-              inputMode="numeric"
-              placeholder="например 07.11.1999"
-              aria-label="Дата рождения"
-            />
+          <div className={`dobRow ${dd || mm || yyyy ? '' : ''} ${dd || mm || yyyy ? (dobOk ? 'dobRow--ok' : 'dobRow--bad') : ''}`}>
+            <div className="dobField">
+              <div className="dobLabel">День</div>
+              <input
+                value={dd}
+                onChange={(e) => onDayChange(e.target.value)}
+                inputMode="numeric"
+                placeholder="ДД"
+                aria-label="День рождения"
+              />
+            </div>
+
+            <div className="dobField">
+              <div className="dobLabel">Месяц</div>
+              <input
+                ref={mmRef}
+                value={mm}
+                onChange={(e) => onMonthChange(e.target.value)}
+                inputMode="numeric"
+                placeholder="ММ"
+                aria-label="Месяц рождения"
+              />
+            </div>
+
+            <div className="dobField">
+              <div className="dobLabel">Год</div>
+              <input
+                ref={yyyyRef}
+                value={yyyy}
+                onChange={(e) => onYearChange(e.target.value)}
+                inputMode="numeric"
+                placeholder="ГГГГ"
+                aria-label="Год рождения"
+              />
+            </div>
           </div>
 
-          {dob.length > 0 && !dobOk ? <div className="err">Проверь формат даты: дд.мм.гггг</div> : null}
+          {dd || mm || yyyy ? (
+            dobOk ? (
+              <div className="hint">Ок: {dobStr}</div>
+            ) : (
+              <div className="err">Проверь дату: ДД (1–31), ММ (1–12), ГГГГ (1900–2100)</div>
+            )
+          ) : null}
         </section>
       ) : null}
 
@@ -222,11 +300,7 @@ export default function PalmPage() {
             <div className="uploadBox">
               <div className="uploadHead">Загрузите левую ладонь</div>
               <label className={`uploadBtn ${left.uploading ? 'is-loading' : ''}`}>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={(e) => onPickFile(e.target.files?.[0] ?? null, 'left')}
-                />
+                <input type="file" accept="image/*" onChange={(e) => onPickFile(e.target.files?.[0] ?? null, 'left')} />
                 {left.url ? 'Загружено ✓' : left.uploading ? 'Загружаю…' : 'Выбрать фото'}
               </label>
               <div className="uploadMeta">
@@ -238,11 +312,7 @@ export default function PalmPage() {
             <div className="uploadBox">
               <div className="uploadHead">Загрузите правую ладонь</div>
               <label className={`uploadBtn ${right.uploading ? 'is-loading' : ''}`}>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={(e) => onPickFile(e.target.files?.[0] ?? null, 'right')}
-                />
+                <input type="file" accept="image/*" onChange={(e) => onPickFile(e.target.files?.[0] ?? null, 'right')} />
                 {right.url ? 'Загружено ✓' : right.uploading ? 'Загружаю…' : 'Выбрать фото'}
               </label>
               <div className="uploadMeta">
@@ -271,9 +341,7 @@ export default function PalmPage() {
                     <div className="optTitle">{o.title}</div>
                     <div className="optSub">{o.sub}</div>
                   </div>
-                  <div className="optRight">
-                    {on ? <span className="tick">✓</span> : <span className="plus">+{PRICE_RUB} ₽</span>}
-                  </div>
+                  <div className="optRight">{on ? <span className="tick">✓</span> : <span className="plus">+{PRICE_RUB} ₽</span>}</div>
                 </button>
               );
             })}
@@ -411,24 +479,22 @@ export default function PalmPage() {
           color: rgba(255, 180, 180, 0.95);
         }
 
-        /* ===== CHIPS ===== */
-        .chips {
+        /* ===== CHIPS (VERTICAL) ===== */
+        .chips-col {
           margin-top: 12px;
-          display: flex;
+          display: grid;
           gap: 10px;
-          flex-wrap: wrap;
         }
 
         .chip {
-          flex: 1;
-          min-width: 96px;
-          padding: 10px 12px;
+          width: 100%;
+          padding: 12px 12px;
           border-radius: 999px;
           border: 1px solid rgba(233, 236, 255, 0.14);
           background: rgba(255, 255, 255, 0.03);
-          color: rgba(233, 236, 255, 0.90);
-          font-size: 13px;
-          font-weight: 850;
+          color: rgba(233, 236, 255, 0.92);
+          font-size: 14px;
+          font-weight: 900;
           cursor: pointer;
           -webkit-tap-highlight-color: transparent;
           text-align: center;
@@ -444,28 +510,39 @@ export default function PalmPage() {
           opacity: 0.92;
         }
 
-        /* ===== FIELD ===== */
-        .field {
+        /* ===== DOB (3 fields) ===== */
+        .dobRow {
           margin-top: 12px;
+          display: grid;
+          grid-template-columns: 1fr 1fr 1.4fr;
+          gap: 10px;
+        }
+
+        .dobField {
           border-radius: 16px;
           border: 1px solid rgba(233, 236, 255, 0.14);
           background: rgba(255, 255, 255, 0.03);
-          padding: 12px 12px;
+          padding: 10px 10px 12px;
         }
 
-        .field--bad {
-          border-color: rgba(255, 180, 180, 0.45);
+        .dobLabel {
+          font-size: 11px;
+          color: rgba(233, 236, 255, 0.62);
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+          margin-bottom: 6px;
         }
 
-        .field input {
+        .dobField input {
           width: 100%;
           border: 0;
           outline: none;
           background: transparent;
           color: var(--text);
-          font-size: 16px;
-          font-weight: 800;
-          letter-spacing: 0.02em;
+          font-size: 18px;
+          font-weight: 950;
+          letter-spacing: 0.04em;
+          text-align: center;
         }
 
         /* ===== UPLOADS ===== */
@@ -526,6 +603,7 @@ export default function PalmPage() {
           margin-top: 10px;
           font-size: 12px;
           color: rgba(233, 236, 255, 0.62);
+          word-break: break-word;
         }
 
         .metaLine + .metaLine {
