@@ -41,8 +41,12 @@ export default function HomePage() {
   return (
     <main className="home">
       <header className="hero" aria-label="Заголовок">
+        <div className="sigil" aria-hidden="true">
+          <span />
+        </div>
+
         <div className="title">АРКАНУМ</div>
-        <div className="subtitle">Арканум · код судьбы</div>
+        <div className="subtitle">код судьбы</div>
       </header>
 
       <section className="grid" aria-label="Меню">
@@ -56,12 +60,9 @@ export default function HomePage() {
         ))}
       </section>
 
-      <section className="secondary" aria-label="Дополнительно">
-        <button type="button" className="miniBtn" onClick={() => go('/reports')}>
+      <section className="bottom" aria-label="Отчёты">
+        <button type="button" className="reportsBtn" onClick={() => go('/reports')}>
           Мои отчёты
-        </button>
-        <button type="button" className="miniBtn miniBtn--outline" onClick={() => go('/premium')}>
-          Премиум
         </button>
       </section>
 
@@ -71,10 +72,11 @@ export default function HomePage() {
           padding: 0 0 calc(env(safe-area-inset-bottom, 0px) + 12px);
         }
 
+        /* ===== HERO ===== */
         .hero {
           margin-top: 6px;
           margin-bottom: 14px;
-          padding: 14px 14px;
+          padding: 18px 14px 16px;
           border-radius: 22px;
           background: rgba(255, 255, 255, 0.04);
           border: 1px solid rgba(233, 236, 255, 0.12);
@@ -90,35 +92,75 @@ export default function HomePage() {
           content: '';
           position: absolute;
           inset: -2px;
-          background: radial-gradient(700px 240px at 50% 0%, rgba(139, 92, 246, 0.22) 0%, rgba(139, 92, 246, 0) 60%),
-            radial-gradient(700px 240px at 20% 120%, rgba(45, 126, 247, 0.16) 0%, rgba(45, 126, 247, 0) 58%);
+          background: radial-gradient(760px 260px at 50% -10%, rgba(139, 92, 246, 0.26) 0%, rgba(139, 92, 246, 0) 62%),
+            radial-gradient(760px 260px at 10% 120%, rgba(45, 126, 247, 0.14) 0%, rgba(45, 126, 247, 0) 58%),
+            radial-gradient(900px 420px at 90% 130%, rgba(245, 158, 11, 0.08) 0%, rgba(245, 158, 11, 0) 60%);
           pointer-events: none;
+        }
+
+        /* “Сигил” сверху — делает заголовок дороже без лишних слов */
+        .sigil {
+          position: relative;
+          width: 48px;
+          height: 48px;
+          margin: 0 auto 10px;
+          border-radius: 14px;
+          border: 1px solid rgba(233, 236, 255, 0.12);
+          background: rgba(255, 255, 255, 0.03);
+          box-shadow: 0 18px 44px rgba(0, 0, 0, 0.55);
+          backdrop-filter: blur(16px);
+          -webkit-backdrop-filter: blur(16px);
+          overflow: hidden;
+        }
+
+        .sigil span {
+          position: absolute;
+          inset: 8px;
+          border-radius: 999px;
+          border: 1px solid rgba(210, 179, 91, 0.55);
+          box-shadow: 0 0 0 1px rgba(139, 92, 246, 0.18), 0 0 26px rgba(210, 179, 91, 0.18);
+        }
+        .sigil::before,
+        .sigil::after {
+          content: '';
+          position: absolute;
+          left: 50%;
+          top: 50%;
+          width: 30px;
+          height: 1px;
+          background: rgba(210, 179, 91, 0.55);
+          transform: translate(-50%, -50%);
+          box-shadow: 0 0 22px rgba(210, 179, 91, 0.18);
+        }
+        .sigil::after {
+          transform: translate(-50%, -50%) rotate(90deg);
         }
 
         .title {
           position: relative;
           font-family: Montserrat, Manrope, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, 'Helvetica Neue', Arial;
           font-weight: 900;
-          letter-spacing: 0.12em;
+          letter-spacing: 0.22em;
           text-transform: uppercase;
-          font-size: 32px;
+          font-size: 30px;
           line-height: 1.05;
-          margin: 2px 0 6px;
+          margin: 0 0 6px;
           color: transparent;
-          background: linear-gradient(180deg, #f6e7b0 0%, #d2b35b 34%, #b8892a 58%, #fff0b8 100%);
+          background: linear-gradient(180deg, #fff1c4 0%, #d2b35b 34%, #b8892a 58%, #fff3cf 100%);
           -webkit-background-clip: text;
           background-clip: text;
-          text-shadow: 0 1px 0 rgba(255, 255, 255, 0.08), 0 18px 44px rgba(0, 0, 0, 0.6);
+          text-shadow: 0 1px 0 rgba(255, 255, 255, 0.06), 0 18px 44px rgba(0, 0, 0, 0.65);
         }
 
         .subtitle {
           position: relative;
           font-size: 12px;
-          color: rgba(233, 236, 255, 0.66);
-          letter-spacing: 0.06em;
+          color: rgba(233, 236, 255, 0.64);
+          letter-spacing: 0.14em;
           text-transform: uppercase;
         }
 
+        /* ===== MENU ===== */
         .grid {
           margin-top: 12px;
           display: flex;
@@ -140,10 +182,27 @@ export default function HomePage() {
           justify-content: flex-start;
           cursor: pointer;
           -webkit-tap-highlight-color: transparent;
-          transition: transform 0.08s ease, opacity 0.08s ease, border-color 0.12s ease;
+          transition: transform 0.08s ease, opacity 0.08s ease, border-color 0.12s ease, background 0.12s ease;
           color: inherit;
           text-align: left;
+          position: relative;
+          overflow: hidden;
         }
+
+        .cardx::before {
+          content: '';
+          position: absolute;
+          inset: 0;
+          pointer-events: none;
+          border-radius: 20px;
+          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+        }
+
+        .cardx:hover {
+          border-color: rgba(139, 92, 246, 0.40);
+          background: rgba(255, 255, 255, 0.07);
+        }
+
         .cardx:active {
           transform: scale(0.99);
           opacity: 0.92;
@@ -160,6 +219,7 @@ export default function HomePage() {
           line-height: 1.1;
           letter-spacing: -0.01em;
         }
+
         .cardSub {
           margin-top: 5px;
           font-size: 12px;
@@ -167,34 +227,42 @@ export default function HomePage() {
           line-height: 1.25;
         }
 
-        .secondary {
+        /* ===== BOTTOM CTA ===== */
+        .bottom {
           margin-top: 14px;
-          display: flex;
-          gap: 10px;
         }
 
-        .miniBtn {
-          flex: 1;
-          padding: 12px 10px;
-          border-radius: 16px;
-          border: 1px solid var(--card-border);
-          background: var(--card-bg);
+        .reportsBtn {
+          width: 100%;
+          padding: 14px 14px;
+          border-radius: 18px;
+          border: 1px solid rgba(210, 179, 91, 0.35);
+          background: rgba(255, 255, 255, 0.04);
           color: var(--text);
-          font-size: 13px;
-          font-weight: 850;
+          font-size: 14px;
+          font-weight: 900;
+          letter-spacing: 0.02em;
           cursor: pointer;
           -webkit-tap-highlight-color: transparent;
-          box-shadow: var(--shadow);
-          backdrop-filter: blur(14px);
-          -webkit-backdrop-filter: blur(14px);
+          box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(139, 92, 246, 0.10);
+          backdrop-filter: blur(16px);
+          -webkit-backdrop-filter: blur(16px);
+          position: relative;
+          overflow: hidden;
         }
-        .miniBtn:active {
+
+        .reportsBtn::before {
+          content: '';
+          position: absolute;
+          inset: -2px;
+          background: radial-gradient(700px 220px at 30% 0%, rgba(139, 92, 246, 0.20) 0%, rgba(139, 92, 246, 0) 60%),
+            radial-gradient(700px 220px at 70% 120%, rgba(210, 179, 91, 0.12) 0%, rgba(210, 179, 91, 0) 62%);
+          pointer-events: none;
+        }
+
+        .reportsBtn:active {
           transform: scale(0.99);
           opacity: 0.92;
-        }
-        .miniBtn--outline {
-          background: rgba(255, 255, 255, 0.04);
-          border-color: rgba(139, 92, 246, 0.30);
         }
       `}</style>
     </main>
