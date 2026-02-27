@@ -1,6 +1,8 @@
 /* path: components/DownBarUtil/hiromant.tsx */
 'use client';
 
+import { useMemo, useState } from 'react';
+
 function haptic(type: 'light' | 'medium' = 'light') {
   try {
     (window as any)?.Telegram?.WebApp?.HapticFeedback?.impactOccurred?.(type);
@@ -8,31 +10,62 @@ function haptic(type: 'light' | 'medium' = 'light') {
 }
 
 export default function HiromantBlock() {
-  const handleStartClick = () => {
+  const [open, setOpen] = useState(false);
+
+  const handleToggle = () => {
     haptic('light');
+    setOpen((v) => !v);
+  };
+
+  const handleStartClick = () => {
+    haptic('medium');
     // TODO: заменить на реальный путь старта Хироманта (например: router.push('/palm'))
     console.log('open palm flow');
   };
 
+  const firstParagraph = useMemo(
+    () => (
+      <>
+        «Хиромант» — это режим, где вы загружаете <b>две фотографии</b>: левую и правую ладонь, а приложение собирает для
+        вас <b>структурированный отчёт</b> по классической хиромантии: линии, знаки, сильные/слабые участки и общие
+        выводы.
+      </>
+    ),
+    []
+  );
+
   return (
     <>
       <section className="miniinfo">
-        {/* Блок 1 — что это такое */}
+        {/* Блок 1 — вводный + раскрытие */}
         <div className="miniinfo-block">
           <h2 className="miniinfo-title">Хиромант в «АРКАНУМ»</h2>
-          <p className="miniinfo-text">
-            «Хиромант» — это режим, где вы загружаете <b>две фотографии</b>: левую и правую ладонь, а приложение собирает
-            для вас <b>структурированный отчёт</b> по классической хиромантии: линии, знаки, сильные/слабые участки и
-            общие выводы.
-          </p>
-          <p className="miniinfo-text">
-            Мы специально делаем это <b>без анкет и лишних вопросов</b>. Никаких «напиши о себе» — только фото. Если
-            снимок действительно нечитабелен (темно, смазано, не вся ладонь), мы честно попросим переснять по примеру.
-          </p>
+
+          <p className="miniinfo-text">{firstParagraph}</p>
+
+          <div className="miniinfo-actions">
+            <button type="button" className="miniinfo-btn miniinfo-btn--ghost" onClick={handleToggle}>
+              {open ? 'Скрыть' : 'Подробнее'}
+            </button>
+
+            <button type="button" className="miniinfo-btn" onClick={handleStartClick}>
+              Открыть «Хиромант»
+            </button>
+          </div>
+
+          <div className={`miniinfo-more ${open ? 'is-open' : ''}`} aria-hidden={!open}>
+            {/* Остальное — раскрывается */}
+            <div className="divider" />
+
+            <p className="miniinfo-text">
+              Мы специально делаем это <b>без анкет и лишних вопросов</b>. Никаких «напиши о себе» — только фото. Если
+              снимок действительно нечитабелен (темно, смазано, не вся ладонь), мы честно попросим переснять по примеру.
+            </p>
+          </div>
         </div>
 
-        {/* Блок 2 — как проходит скан */}
-        <div className="miniinfo-block">
+        {/* Блок 2 — как проходит скан (скрываем, пока не нажали "Подробнее") */}
+        <div className={`miniinfo-block ${open ? '' : 'is-hidden'}`}>
           <h2 className="miniinfo-title">Как проходит скан ладоней</h2>
           <p className="miniinfo-text">
             Сначала вы загружаете <b>левую ладонь</b>, затем <b>правую</b>. Логика простая: левая чаще показывает
@@ -44,14 +77,10 @@ export default function HiromantBlock() {
             дополнительные — если они читаются уверенно). Для каждой линии учитываются длина, глубина, форма, ветви,
             пересечения, разрывы и другие элементы, которые традиционно используют в хиромантии.
           </p>
-
-          <button type="button" className="miniinfo-btn" onClick={handleStartClick}>
-            Открыть «Хиромант»
-          </button>
         </div>
 
-        {/* Блок 3 — что вы получите */}
-        <div className="miniinfo-block">
+        {/* Блок 3 — что вы получите (скрываем, пока не нажали "Подробнее") */}
+        <div className={`miniinfo-block ${open ? '' : 'is-hidden'}`}>
           <h2 className="miniinfo-title">Что вы получите в отчёте</h2>
           <p className="miniinfo-text">Готовый отчёт строится блоками, чтобы его можно было быстро прочитать и сохранить:</p>
 
@@ -132,6 +161,64 @@ export default function HiromantBlock() {
           color: rgba(233, 236, 255, 0.72);
         }
 
+        .miniinfo-actions {
+          display: grid;
+          grid-template-columns: 1fr 1.35fr;
+          gap: 10px;
+          margin-top: 12px;
+        }
+
+        .miniinfo-btn {
+          padding: 13px 16px;
+          width: 100%;
+          border-radius: 999px;
+          border: 1px solid rgba(210, 179, 91, 0.4);
+          background: rgba(255, 255, 255, 0.04);
+          color: var(--text);
+          font-size: 14px;
+          font-weight: 850;
+          text-align: center;
+          cursor: pointer;
+          -webkit-tap-highlight-color: transparent;
+          box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(139, 92, 246, 0.1);
+          backdrop-filter: blur(16px);
+          -webkit-backdrop-filter: blur(16px);
+        }
+
+        .miniinfo-btn--ghost {
+          border-color: rgba(233, 236, 255, 0.16);
+          background: rgba(255, 255, 255, 0.03);
+          box-shadow: 0 14px 38px rgba(0, 0, 0, 0.45);
+        }
+
+        .miniinfo-btn:active {
+          transform: scale(0.98);
+          opacity: 0.92;
+        }
+
+        .divider {
+          height: 1px;
+          background: rgba(233, 236, 255, 0.12);
+          margin: 14px 0 6px;
+        }
+
+        /* раскрывашка */
+        .miniinfo-more {
+          max-height: 0;
+          overflow: hidden;
+          opacity: 0;
+          transition: max-height 260ms ease, opacity 220ms ease;
+        }
+        .miniinfo-more.is-open {
+          max-height: 420px;
+          opacity: 1;
+        }
+
+        /* блоки 2-3 скрыты, пока не нажали подробнее */
+        .is-hidden {
+          display: none;
+        }
+
         .miniinfo-list {
           margin: 10px 0 0;
           padding: 0 0 0 18px;
@@ -142,29 +229,6 @@ export default function HiromantBlock() {
 
         .miniinfo-list li {
           margin: 6px 0;
-        }
-
-        .miniinfo-btn {
-          margin-top: 12px;
-          padding: 13px 16px;
-          width: 100%;
-          border-radius: 999px;
-          border: 1px solid rgba(210, 179, 91, 0.4);
-          background: rgba(255, 255, 255, 0.04);
-          color: var(--text);
-          font-size: 15px;
-          font-weight: 800;
-          text-align: center;
-          cursor: pointer;
-          -webkit-tap-highlight-color: transparent;
-          box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(139, 92, 246, 0.1);
-          backdrop-filter: blur(16px);
-          -webkit-backdrop-filter: blur(16px);
-        }
-
-        .miniinfo-btn:active {
-          transform: scale(0.98);
-          opacity: 0.92;
         }
       `}</style>
     </>
