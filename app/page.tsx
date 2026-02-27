@@ -13,9 +13,7 @@ function haptic(type: 'light' | 'medium' = 'light') {
 type Action = {
   title: string;
   subtitle: string;
-  emoji: string;
   href: string;
-  accent?: 'green' | 'blue' | 'violet' | 'amber';
 };
 
 export default function HomePage() {
@@ -29,10 +27,10 @@ export default function HomePage() {
   }, []);
 
   const actions: Action[] = [
-    { title: 'Ладонь', subtitle: '2 фото → полный отчёт по линиям', emoji: '🖐', href: '/palm', accent: 'green' },
-    { title: 'Код даты', subtitle: 'Дата рождения → интерпретация чисел', emoji: '🔢', href: '/date-code', accent: 'blue' },
-    { title: 'Карта рождения', subtitle: 'Дата/время/город → глубже и “точнее”', emoji: '⭐', href: '/birth-chart', accent: 'violet' },
-    { title: 'Синтез', subtitle: 'Склеить всё → общий “вердикт”', emoji: '🧬', href: '/synth', accent: 'amber' },
+    { title: 'Ладонь', subtitle: '2 фото → полный отчёт по линиям', href: '/palm' },
+    { title: 'Код даты', subtitle: 'Дата рождения → интерпретация чисел', href: '/date-code' },
+    { title: 'Карта рождения', subtitle: 'Дата/время/город → глубже и “точнее”', href: '/birth-chart' },
+    { title: 'Синтез', subtitle: 'Склеить всё → общий “вердикт”', href: '/synth' },
   ];
 
   const go = (href: string) => {
@@ -42,133 +40,87 @@ export default function HomePage() {
 
   return (
     <main className="home">
-      <header className="top">
-        <div className="brand">
-          <div className="logo">🔮</div>
-          <div className="brandText">
-            <div className="brandTitle">Ладонь + Код</div>
-            <div className="brandSub">мини-приложение в Telegram</div>
-          </div>
-        </div>
-
-        <div className="hint">
-          <div className="hintTitle">Без анкет и допросов</div>
-          <div className="hintSub">Для ладони — только 2 фото. Если качество плохое, попросим переснять по примеру.</div>
-        </div>
+      <header className="hero" aria-label="Заголовок">
+        <div className="title">АРКАНУМ</div>
+        <div className="subtitle">Арканум · код судьбы</div>
       </header>
 
       <section className="grid" aria-label="Меню">
         {actions.map((a) => (
-          <button
-            key={a.href}
-            type="button"
-            className={`cardx cardx--${a.accent ?? 'green'}`}
-            onClick={() => go(a.href)}
-          >
-            <div className="cardHead">
-              <div className="emoji">{a.emoji}</div>
-              <div className="cardText">
-                <div className="cardTitle">{a.title}</div>
-                <div className="cardSub">{a.subtitle}</div>
-              </div>
+          <button key={a.href} type="button" className="cardx" onClick={() => go(a.href)}>
+            <div className="cardText">
+              <div className="cardTitle">{a.title}</div>
+              <div className="cardSub">{a.subtitle}</div>
             </div>
-            <div className="chev">›</div>
           </button>
         ))}
       </section>
 
       <section className="secondary" aria-label="Дополнительно">
         <button type="button" className="miniBtn" onClick={() => go('/reports')}>
-          🗂 Мои отчёты
+          Мои отчёты
         </button>
         <button type="button" className="miniBtn miniBtn--outline" onClick={() => go('/premium')}>
-          💎 Премиум
+          Премиум
         </button>
       </section>
-
-      <footer className="foot">
-        <div className="note">
-          <div className="noteTitle">Важно</div>
-          <div className="noteSub">
-            Это развлекательная интерпретация. Мы показываем “уверенность” и не притворяемся оракулом с дипломом из тумана.
-          </div>
-        </div>
-      </footer>
 
       <style jsx>{`
         .home {
           min-height: 100dvh;
           padding: 0 0 calc(env(safe-area-inset-bottom, 0px) + 12px);
-          /* фон НЕ задаём — его уже рисует .lm-bg в globals.css */
         }
 
-        .top {
-          display: flex;
-          flex-direction: column;
-          gap: 14px;
-          margin-top: 2px;
-        }
-
-        .brand {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          padding: 12px 12px;
-          border-radius: 18px;
-          background: var(--card-bg);
-          border: 1px solid var(--card-border);
-          box-shadow: var(--shadow);
-          backdrop-filter: blur(14px) saturate(140%);
-          -webkit-backdrop-filter: blur(14px) saturate(140%);
-        }
-
-        .logo {
-          width: 44px;
-          height: 44px;
-          display: grid;
-          place-items: center;
-          border-radius: 14px;
-          background: rgba(139, 92, 246, 0.14);
+        .hero {
+          margin-top: 6px;
+          margin-bottom: 14px;
+          padding: 14px 14px;
+          border-radius: 22px;
+          background: rgba(255, 255, 255, 0.04);
           border: 1px solid rgba(233, 236, 255, 0.12);
-          box-shadow: 0 14px 30px rgba(0, 0, 0, 0.42);
-          font-size: 22px;
-        }
-
-        .brandTitle {
-          font-size: 16px;
-          font-weight: 850;
-          color: var(--text);
-          line-height: 1.1;
-        }
-        .brandSub {
-          font-size: 12px;
-          color: var(--subtle);
-          margin-top: 2px;
-        }
-
-        .hint {
-          padding: 12px 12px;
-          border-radius: 18px;
-          background: rgba(255, 255, 255, 0.05);
-          border: 1px solid var(--card-border);
           box-shadow: var(--shadow);
-          backdrop-filter: blur(14px);
-          -webkit-backdrop-filter: blur(14px);
+          backdrop-filter: blur(16px) saturate(140%);
+          -webkit-backdrop-filter: blur(16px) saturate(140%);
+          text-align: center;
+          position: relative;
+          overflow: hidden;
         }
-        .hintTitle {
-          font-size: 13px;
-          font-weight: 850;
-          color: var(--text);
+
+        .hero::before {
+          content: '';
+          position: absolute;
+          inset: -2px;
+          background: radial-gradient(700px 240px at 50% 0%, rgba(139, 92, 246, 0.22) 0%, rgba(139, 92, 246, 0) 60%),
+            radial-gradient(700px 240px at 20% 120%, rgba(45, 126, 247, 0.16) 0%, rgba(45, 126, 247, 0) 58%);
+          pointer-events: none;
         }
-        .hintSub {
-          margin-top: 4px;
+
+        .title {
+          position: relative;
+          font-family: Montserrat, Manrope, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, 'Helvetica Neue', Arial;
+          font-weight: 900;
+          letter-spacing: 0.12em;
+          text-transform: uppercase;
+          font-size: 32px;
+          line-height: 1.05;
+          margin: 2px 0 6px;
+          color: transparent;
+          background: linear-gradient(180deg, #f6e7b0 0%, #d2b35b 34%, #b8892a 58%, #fff0b8 100%);
+          -webkit-background-clip: text;
+          background-clip: text;
+          text-shadow: 0 1px 0 rgba(255, 255, 255, 0.08), 0 18px 44px rgba(0, 0, 0, 0.6);
+        }
+
+        .subtitle {
+          position: relative;
           font-size: 12px;
-          color: rgba(233, 236, 255, 0.68);
-          line-height: 1.35;
+          color: rgba(233, 236, 255, 0.66);
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
         }
 
         .grid {
-          margin-top: 16px;
+          margin-top: 12px;
           display: flex;
           flex-direction: column;
           gap: 10px;
@@ -177,7 +129,7 @@ export default function HomePage() {
         .cardx {
           width: 100%;
           border: 1px solid var(--card-border);
-          padding: 14px 14px;
+          padding: 16px 16px;
           border-radius: 20px;
           background: var(--card-bg);
           box-shadow: var(--shadow);
@@ -185,66 +137,34 @@ export default function HomePage() {
           -webkit-backdrop-filter: blur(14px) saturate(140%);
           display: flex;
           align-items: center;
-          justify-content: space-between;
+          justify-content: flex-start;
           cursor: pointer;
           -webkit-tap-highlight-color: transparent;
-          transition: transform 0.08s ease, box-shadow 0.08s ease, opacity 0.08s ease, border-color 0.12s ease;
+          transition: transform 0.08s ease, opacity 0.08s ease, border-color 0.12s ease;
           color: inherit;
+          text-align: left;
         }
         .cardx:active {
           transform: scale(0.99);
           opacity: 0.92;
         }
 
-        .cardHead {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-        }
-
-        .emoji {
-          width: 44px;
-          height: 44px;
-          display: grid;
-          place-items: center;
-          border-radius: 16px;
-          font-size: 22px;
-          border: 1px solid rgba(233, 236, 255, 0.12);
-          box-shadow: 0 14px 30px rgba(0, 0, 0, 0.42);
+        .cardText {
+          width: 100%;
         }
 
         .cardTitle {
-          font-size: 15px;
-          font-weight: 850;
+          font-size: 16px;
+          font-weight: 900;
           color: var(--text);
           line-height: 1.1;
+          letter-spacing: -0.01em;
         }
         .cardSub {
-          margin-top: 3px;
+          margin-top: 5px;
           font-size: 12px;
           color: rgba(233, 236, 255, 0.62);
           line-height: 1.25;
-        }
-
-        .chev {
-          font-size: 26px;
-          line-height: 1;
-          color: rgba(233, 236, 255, 0.32);
-          padding-left: 10px;
-        }
-
-        /* акцентные “ауры” на иконках */
-        .cardx--green .emoji {
-          background: rgba(36, 199, 104, 0.12);
-        }
-        .cardx--blue .emoji {
-          background: rgba(45, 126, 247, 0.14);
-        }
-        .cardx--violet .emoji {
-          background: rgba(139, 92, 246, 0.16);
-        }
-        .cardx--amber .emoji {
-          background: rgba(245, 158, 11, 0.14);
         }
 
         .secondary {
@@ -261,7 +181,7 @@ export default function HomePage() {
           background: var(--card-bg);
           color: var(--text);
           font-size: 13px;
-          font-weight: 800;
+          font-weight: 850;
           cursor: pointer;
           -webkit-tap-highlight-color: transparent;
           box-shadow: var(--shadow);
@@ -275,30 +195,6 @@ export default function HomePage() {
         .miniBtn--outline {
           background: rgba(255, 255, 255, 0.04);
           border-color: rgba(139, 92, 246, 0.30);
-        }
-
-        .foot {
-          margin-top: 16px;
-        }
-        .note {
-          padding: 12px 12px;
-          border-radius: 18px;
-          background: rgba(255, 255, 255, 0.05);
-          border: 1px solid var(--card-border);
-          box-shadow: var(--shadow);
-          backdrop-filter: blur(14px);
-          -webkit-backdrop-filter: blur(14px);
-        }
-        .noteTitle {
-          font-size: 12px;
-          font-weight: 850;
-          color: var(--text);
-        }
-        .noteSub {
-          margin-top: 4px;
-          font-size: 12px;
-          color: rgba(233, 236, 255, 0.60);
-          line-height: 1.35;
         }
       `}</style>
     </main>
