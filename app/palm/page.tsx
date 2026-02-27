@@ -88,6 +88,25 @@ function formatDob(dd: string, mm: string, yyyy: string) {
   return `${d}.${m}.${yyyy}`;
 }
 
+function calcAge(dd: string, mm: string, yyyy: string) {
+  const d = Number(dd);
+  const m = Number(mm);
+  const y = Number(yyyy);
+  if (!d || !m || !y) return null;
+
+  const now = new Date();
+  const birth = new Date(y, m - 1, d);
+  if (Number.isNaN(birth.getTime())) return null;
+
+  let age = now.getFullYear() - y;
+
+  const thisYearsBirthday = new Date(now.getFullYear(), m - 1, d);
+  if (now < thisYearsBirthday) age -= 1;
+
+  if (age < 0 || age > 130) return null;
+  return age;
+}
+
 type CreateOk = { ok: true; scanId: string };
 type CreateErr = { ok: false; error: string; hint?: string };
 type CreateResp = CreateOk | CreateErr;
@@ -101,7 +120,11 @@ async function createPalmScan(initData: string, handedness: Handedness, dob: str
     });
     const j = (await res.json().catch(() => null)) as any;
     if (!res.ok || !j || j.ok !== true || typeof j.scanId !== 'string') {
-      return { ok: false, error: j?.error ? String(j.error) : `CREATE_FAILED(${res.status})`, hint: j?.hint ? String(j.hint) : undefined };
+      return {
+        ok: false,
+        error: j?.error ? String(j.error) : `CREATE_FAILED(${res.status})`,
+        hint: j?.hint ? String(j.hint) : undefined,
+      };
     }
     return { ok: true, scanId: String(j.scanId) };
   } catch (e: any) {
@@ -135,6 +158,38 @@ async function uploadPalmPhoto(
   }
 }
 
+/* простой SVG-образец (без отдельного файла) */
+const PALM_EXAMPLE_SVG = `data:image/svg+xml;utf8,${encodeURIComponent(`
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="1200" viewBox="0 0 900 1200">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0b1020"/>
+      <stop offset="1" stop-color="#0a0f1a"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="20%" r="70%">
+      <stop offset="0" stop-color="rgba(210,179,91,0.35)"/>
+      <stop offset="1" stop-color="rgba(210,179,91,0)"/>
+    </radialGradient>
+  </defs>
+  <rect width="900" height="1200" rx="46" fill="url(#bg)"/>
+  <rect width="900" height="1200" rx="46" fill="url(#glow)"/>
+  <g transform="translate(120,130)" fill="none" stroke="rgba(233,236,255,0.85)" stroke-width="10" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M360 890c-120-40-190-140-190-260 0-80 30-150 90-200 30-25 45-55 45-95 0-70 58-125 130-125 30 0 60 10 82 28 40 32 55 70 55 120 0 45 18 75 48 102 62 56 95 120 95 205 0 150-98 270-255 325-35 12-70 12-100 0z" opacity="0.95"/>
+    <path d="M265 320c-15-60-10-140 35-195 45-55 110-72 150-55 40 17 68 70 55 125" opacity="0.7"/>
+    <path d="M180 430c-60-40-105-110-112-170-7-60 20-105 55-120 35-15 85 5 120 55" opacity="0.55"/>
+    <path d="M560 340c22-70 75-120 125-130 50-10 85 15 95 55 10 40-10 95-55 135" opacity="0.55"/>
+    <path d="M610 470c65-10 125 10 150 55 25 45 5 105-45 145" opacity="0.45"/>
+  </g>
+
+  <g transform="translate(140,860)" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial" fill="rgba(233,236,255,0.88)">
+    <text x="0" y="0" font-size="42" font-weight="800">Пример правильного фото</text>
+    <text x="0" y="52" font-size="28" fill="rgba(233,236,255,0.62)">
+      Ладонь целиком • без сильной тени • фокус на линиях
+    </text>
+  </g>
+</svg>
+`)}`;
+
 export default function PalmPage() {
   useEffect(() => {
     try {
@@ -155,6 +210,8 @@ export default function PalmPage() {
   const dobOk = useMemo(() => isDobPartsOk(dd.trim(), mm.trim(), yyyy.trim()), [dd, mm, yyyy]);
   const dobStr = useMemo(() => (dobOk ? formatDob(dd.trim(), mm.trim(), yyyy.trim()) : ''), [dobOk, dd, mm, yyyy]);
 
+  const age = useMemo(() => (dobOk ? calcAge(dd.trim(), mm.trim(), yyyy.trim()) : null), [dobOk, dd, mm, yyyy]);
+
   const canShowDob = handedness !== null;
   const canShowUploads = canShowDob && dobOk;
 
@@ -165,6 +222,8 @@ export default function PalmPage() {
   const [right, setRight] = useState<UploadState>({ uploading: false });
 
   const bothUploaded = Boolean(left.url) && Boolean(right.url);
+
+  const [exampleOpen, setExampleOpen] = useState(false);
 
   const options = useMemo(
     () =>
@@ -203,7 +262,6 @@ export default function PalmPage() {
   const setHand = (v: Handedness) => {
     haptic('medium');
     setHandedness(v);
-    // если пользователь поменял руку — сбрасываем draft
     setScanId('');
     setScanErr('');
     setLeft({ uploading: false });
@@ -217,7 +275,6 @@ export default function PalmPage() {
     return '';
   }, [handedness]);
 
-  // ✅ создаём PalmScan DRAFT как только есть handedness + валидная дата
   useEffect(() => {
     const run = async () => {
       if (!handedness || !dobOk) return;
@@ -300,6 +357,16 @@ export default function PalmPage() {
     setYyyy(clean);
   };
 
+  const openExample = () => {
+    haptic('light');
+    setExampleOpen(true);
+  };
+
+  const closeExample = () => {
+    haptic('light');
+    setExampleOpen(false);
+  };
+
   return (
     <main className="p">
       <header className="hero" aria-label="Заголовок">
@@ -315,10 +382,11 @@ export default function PalmPage() {
       ) : null}
 
       <section className="card" aria-label="Выбор ведущей руки">
-        <div className="label">Кто вы?</div>
-        <div className="desc">Выберите — чтобы мы правильно определили активную ладонь.</div>
+        <div className="label center">Кто вы?</div>
+        <div className="desc center">Выберите — чтобы мы правильно определили активную ладонь.</div>
 
-        <div className="stack">
+        {/* ✅ кнопки по центру */}
+        <div className="handStack">
           <button type="button" className={`pill ${handedness === 'RIGHT' ? 'pill--on' : ''}`} onClick={() => setHand('RIGHT')}>
             Правша
           </button>
@@ -330,13 +398,13 @@ export default function PalmPage() {
           </button>
         </div>
 
-        {handedness ? <div className="hint">{activeHandText}</div> : null}
+        {handedness ? <div className="hint center">{activeHandText}</div> : null}
       </section>
 
       {canShowDob ? (
         <section className="card" aria-label="Дата рождения">
-          <div className="label">Дата рождения</div>
-          <div className="desc">День · месяц · год</div>
+          <div className="label center">Дата рождения</div>
+          <div className="desc center">День · месяц · год</div>
 
           <div className="dob">
             <div className="dobField">
@@ -355,16 +423,24 @@ export default function PalmPage() {
             </div>
           </div>
 
-          {dd || mm || yyyy ? (dobOk ? <div className="hint">Ок: {dobStr}</div> : <div className="warn">Проверь дату.</div>) : null}
-          {dobOk && handedness && !scanId ? <div className="hint">Создаём черновик…</div> : null}
-          {scanId ? <div className="hint">Scan ID: {scanId}</div> : null}
+          {dd || mm || yyyy ? (dobOk ? <div className="hint center">Ок: {dobStr}</div> : <div className="warn center">Проверь дату.</div>) : null}
+          {dobOk && handedness && !scanId ? <div className="hint center">Создаём черновик…</div> : null}
+
+          {/* ✅ вместо Scan ID */}
+          {dobOk && age !== null ? <div className="hint center">Вам — <b>{age}</b> лет</div> : null}
         </section>
       ) : null}
 
       {canShowUploads ? (
         <section className="card" aria-label="Загрузка фото ладоней">
           <div className="label">Фото ладоней</div>
-          <div className="desc">Загрузите обе ладони. Чётко, ладонь целиком, без сильной тени.</div>
+
+          <div className="desc">
+            Загрузите обе ладони. Чётко, ладонь целиком, без сильной тени.{' '}
+            <button type="button" className="exampleLink" onClick={openExample}>
+              Пример
+            </button>
+          </div>
 
           <div className="stack">
             <div className="u">
@@ -440,6 +516,26 @@ export default function PalmPage() {
             Продолжить
           </button>
         </section>
+      ) : null}
+
+      {/* ✅ модалка "Пример" */}
+      {exampleOpen ? (
+        <div className="modal" role="dialog" aria-modal="true" aria-label="Пример фото ладони" onClick={closeExample}>
+          <div className="modalCard" onClick={(e) => e.stopPropagation()}>
+            <div className="modalTop">
+              <div className="modalTitle">Пример фото ладони</div>
+              <button type="button" className="modalClose" onClick={closeExample} aria-label="Закрыть">
+                ✕
+              </button>
+            </div>
+
+            <div className="modalBody">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img className="modalImg" src={PALM_EXAMPLE_SVG} alt="Пример фото ладони" />
+              <div className="modalHint">Совет: снимай при дневном свете, без бликов, ладонь целиком в кадре.</div>
+            </div>
+          </div>
+        </div>
       ) : null}
 
       <style jsx>{`
@@ -550,14 +646,22 @@ export default function PalmPage() {
           line-height: 1.35;
         }
 
-        .stack {
+        .center {
+          text-align: center;
+        }
+
+        /* ✅ hand buttons centered */
+        .handStack {
+          margin-top: 6px;
           display: flex;
           flex-direction: column;
+          align-items: center;
           gap: 10px;
         }
 
         .pill {
           width: 100%;
+          max-width: 280px;  /* ✅ центрированная ширина */
           padding: 12px 12px;
           border-radius: 999px;
           border: 1px solid rgba(233, 236, 255, 0.14);
@@ -578,6 +682,12 @@ export default function PalmPage() {
         .pill:active {
           transform: scale(0.98);
           opacity: 0.92;
+        }
+
+        .stack {
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
         }
 
         .hint {
@@ -629,6 +739,18 @@ export default function PalmPage() {
           font-weight: 950;
           letter-spacing: 0.04em;
           text-align: center;
+        }
+
+        .exampleLink {
+          border: 0;
+          background: transparent;
+          padding: 0;
+          margin: 0;
+          color: rgba(210, 179, 91, 0.95);
+          font-weight: 900;
+          text-decoration: underline;
+          cursor: pointer;
+          -webkit-tap-highlight-color: transparent;
         }
 
         .u {
@@ -824,6 +946,80 @@ export default function PalmPage() {
           .dobField:last-child {
             grid-column: 1 / -1;
           }
+        }
+
+        /* ===== MODAL ===== */
+        .modal {
+          position: fixed;
+          inset: 0;
+          background: rgba(0, 0, 0, 0.55);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 16px;
+          z-index: 9999;
+        }
+
+        .modalCard {
+          width: 100%;
+          max-width: 520px;
+          border-radius: 20px;
+          border: 1px solid rgba(233, 236, 255, 0.12);
+          background: rgba(12, 16, 32, 0.92);
+          backdrop-filter: blur(16px) saturate(140%);
+          -webkit-backdrop-filter: blur(16px) saturate(140%);
+          box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
+          overflow: hidden;
+        }
+
+        .modalTop {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          padding: 12px 12px 10px;
+          border-bottom: 1px solid rgba(233, 236, 255, 0.10);
+        }
+
+        .modalTitle {
+          font-size: 14px;
+          font-weight: 950;
+          color: rgba(233, 236, 255, 0.92);
+        }
+
+        .modalClose {
+          width: 34px;
+          height: 34px;
+          border-radius: 999px;
+          border: 1px solid rgba(233, 236, 255, 0.14);
+          background: rgba(255, 255, 255, 0.04);
+          color: rgba(233, 236, 255, 0.90);
+          font-weight: 950;
+          cursor: pointer;
+          -webkit-tap-highlight-color: transparent;
+        }
+
+        .modalBody {
+          padding: 12px;
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+        }
+
+        .modalImg {
+          width: 100%;
+          height: auto;
+          border-radius: 16px;
+          border: 1px solid rgba(233, 236, 255, 0.10);
+          background: rgba(255, 255, 255, 0.02);
+          display: block;
+        }
+
+        .modalHint {
+          font-size: 12px;
+          font-weight: 800;
+          color: rgba(233, 236, 255, 0.62);
+          line-height: 1.35;
         }
       `}</style>
     </main>
