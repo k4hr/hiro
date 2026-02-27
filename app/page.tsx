@@ -41,10 +41,6 @@ export default function HomePage() {
   return (
     <main className="home">
       <header className="hero" aria-label="Заголовок">
-        <div className="sigil" aria-hidden="true">
-          <span />
-        </div>
-
         <div className="title">АРКАНУМ</div>
         <div className="subtitle">код судьбы</div>
       </header>
@@ -98,44 +94,6 @@ export default function HomePage() {
           pointer-events: none;
         }
 
-        /* “Сигил” сверху — делает заголовок дороже без лишних слов */
-        .sigil {
-          position: relative;
-          width: 48px;
-          height: 48px;
-          margin: 0 auto 10px;
-          border-radius: 14px;
-          border: 1px solid rgba(233, 236, 255, 0.12);
-          background: rgba(255, 255, 255, 0.03);
-          box-shadow: 0 18px 44px rgba(0, 0, 0, 0.55);
-          backdrop-filter: blur(16px);
-          -webkit-backdrop-filter: blur(16px);
-          overflow: hidden;
-        }
-
-        .sigil span {
-          position: absolute;
-          inset: 8px;
-          border-radius: 999px;
-          border: 1px solid rgba(210, 179, 91, 0.55);
-          box-shadow: 0 0 0 1px rgba(139, 92, 246, 0.18), 0 0 26px rgba(210, 179, 91, 0.18);
-        }
-        .sigil::before,
-        .sigil::after {
-          content: '';
-          position: absolute;
-          left: 50%;
-          top: 50%;
-          width: 30px;
-          height: 1px;
-          background: rgba(210, 179, 91, 0.55);
-          transform: translate(-50%, -50%);
-          box-shadow: 0 0 22px rgba(210, 179, 91, 0.18);
-        }
-        .sigil::after {
-          transform: translate(-50%, -50%) rotate(90deg);
-        }
-
         .title {
           position: relative;
           font-family: Montserrat, Manrope, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, 'Helvetica Neue', Arial;
@@ -145,11 +103,38 @@ export default function HomePage() {
           font-size: 30px;
           line-height: 1.05;
           margin: 0 0 6px;
+
+          /* ✨ "Перелив" */
           color: transparent;
-          background: linear-gradient(180deg, #fff1c4 0%, #d2b35b 34%, #b8892a 58%, #fff3cf 100%);
+          background: linear-gradient(
+            115deg,
+            #fff3cf 0%,
+            #d2b35b 18%,
+            #f6e7b0 36%,
+            #b8892a 54%,
+            #fff3cf 72%,
+            #d2b35b 100%
+          );
+          background-size: 220% 100%;
           -webkit-background-clip: text;
           background-clip: text;
+
           text-shadow: 0 1px 0 rgba(255, 255, 255, 0.06), 0 18px 44px rgba(0, 0, 0, 0.65);
+
+          animation: shimmer 3.2s ease-in-out infinite;
+          will-change: background-position;
+        }
+
+        @keyframes shimmer {
+          0% {
+            background-position: 0% 50%;
+          }
+          50% {
+            background-position: 100% 50%;
+          }
+          100% {
+            background-position: 0% 50%;
+          }
         }
 
         .subtitle {
