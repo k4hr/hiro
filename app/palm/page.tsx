@@ -299,16 +299,38 @@ export default function PalmPage() {
 
   const submitDisabled = !handedness || !dobOk || !bothUploaded || selectedCount === 0 || !scanId;
 
-  const onSubmit = () => {
+  const onSubmit = async () => {
     haptic('medium');
+
+    const initData = getInitDataNow();
+    if (!initData) {
+      setScanErr('NO_INIT_DATA');
+      return;
+    }
+    if (!scanId) {
+      setScanErr('NO_SCAN_ID');
+      return;
+    }
+    if (!handedness) {
+      setScanErr('NO_HANDEDNESS');
+      return;
+    }
+    if (!dobOk) {
+      setScanErr('BAD_DOB');
+      return;
+    }
+    if (!left.url || !right.url) {
+      setScanErr('NO_PHOTOS');
+      return;
+    }
 
     const payload = {
       scanId,
       handedness,
       dob: dobStr,
       age,
-      leftUrl: left.url!,
-      rightUrl: right.url!,
+      leftUrl: left.url,
+      rightUrl: right.url,
       selected,
       totalRub,
     };
@@ -316,6 +338,26 @@ export default function PalmPage() {
     try {
       sessionStorage.setItem(`palm_submit_${scanId}`, JSON.stringify(payload));
     } catch {}
+
+    // ✅ Сохраняем выбранные пункты в БД (через Report(DRAFT).input)
+    try {
+      await fetch('/api/palm/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          initData,
+          scanId,
+          handedness: payload.handedness,
+          dob: payload.dob,
+          age: payload.age,
+          selected: payload.selected,
+          totalRub: payload.totalRub,
+          priceRub: PRICE_RUB,
+        }),
+      });
+    } catch {
+      // даже если упало — UX не ломаем, пускаем дальше (v1)
+    }
 
     // “как будто сразу оплачено” → сразу на страницу разбора
     router.push(`/palm/report?scanId=${encodeURIComponent(scanId)}`);
@@ -428,12 +470,7 @@ export default function PalmPage() {
             <div className="u">
               <div className="uTitle">Загрузите левую ладонь</div>
               <label className={`pick ${left.uploading ? 'is-loading' : ''} ${!scanId ? 'is-disabled' : ''}`}>
-                <input
-                  type="file"
-                  accept="image/*"
-                  disabled={!scanId}
-                  onChange={(e) => onPickFile(e.target.files?.[0] ?? null, 'left')}
-                />
+                <input type="file" accept="image/*" disabled={!scanId} onChange={(e) => onPickFile(e.target.files?.[0] ?? null, 'left')} />
                 {left.url ? 'Загружено ✓' : left.uploading ? 'Загружаю…' : !scanId ? 'Подготовка…' : 'Выбрать фото'}
               </label>
               <div className="meta">
@@ -445,12 +482,7 @@ export default function PalmPage() {
             <div className="u">
               <div className="uTitle">Загрузите правую ладонь</div>
               <label className={`pick ${right.uploading ? 'is-loading' : ''} ${!scanId ? 'is-disabled' : ''}`}>
-                <input
-                  type="file"
-                  accept="image/*"
-                  disabled={!scanId}
-                  onChange={(e) => onPickFile(e.target.files?.[0] ?? null, 'right')}
-                />
+                <input type="file" accept="image/*" disabled={!scanId} onChange={(e) => onPickFile(e.target.files?.[0] ?? null, 'right')} />
                 {right.url ? 'Загружено ✓' : right.uploading ? 'Загружаю…' : !scanId ? 'Подготовка…' : 'Выбрать фото'}
               </label>
               <div className="meta">
