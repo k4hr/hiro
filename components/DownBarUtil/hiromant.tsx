@@ -17,6 +17,16 @@ export default function HiromantBlock() {
     setOpen((v) => !v);
   };
 
+  const firstParagraph = useMemo(
+    () => (
+      <>
+        «Хиромант» — это режим, где вы загружаете <b>две фотографии</b>: левую и правую ладонь, а приложение собирает для
+        вас <b>структурированный отчёт</b> по классической хиромантии.
+      </>
+    ),
+    []
+  );
+
   const intro = useMemo(
     () => (
       <>
@@ -32,9 +42,10 @@ export default function HiromantBlock() {
       <section className="miniinfo">
         {/* Блок 1 — вводный + раскрытие */}
         <div className="miniinfo-block">
-          <h2 className="miniinfo-title">Активная и пассивная ладонь: как читать две руки</h2>
+          <h2 className="miniinfo-title">Хиромант в «АРКАНУМ»</h2>
 
-          <p className="miniinfo-text">{intro}</p>
+          {/* ✅ короткое понятное описание ДО кнопки */}
+          <p className="miniinfo-text">{firstParagraph}</p>
 
           <div className="miniinfo-actions">
             <button type="button" className="miniinfo-btn" onClick={handleToggle}>
@@ -45,6 +56,12 @@ export default function HiromantBlock() {
           <div className={`miniinfo-more ${open ? 'is-open' : ''}`} aria-hidden={!open}>
             <div className="divider" />
           </div>
+        </div>
+
+        {/* Далее — показываем ТОЛЬКО после "Подробнее" */}
+        <div className={`miniinfo-block ${open ? '' : 'is-hidden'}`}>
+          <h2 className="miniinfo-title">Активная и пассивная ладонь: как читать две руки</h2>
+          <p className="miniinfo-text">{intro}</p>
         </div>
 
         {/* Блок 2 — какая рука активная */}
@@ -270,6 +287,16 @@ export default function HiromantBlock() {
               свою мощность”.
             </li>
           </ul>
+        </div>
+
+        {/* ✅ В КОНЦЕ — что вы получаете */}
+        <div className={`miniinfo-block ${open ? '' : 'is-hidden'}`}>
+          <h2 className="miniinfo-title">Что вы получаете</h2>
+          <p className="miniinfo-text">
+            <b>Расширенный и развернутый отчёт</b> по всем ключевым линиям и знакам на обеих ладонях — с понятными
+            выводами и акцентами: эмоции и отношения, мышление и решения, ресурс и стресс, путь и повороты, таланты и
+            сильные стороны.
+          </p>
         </div>
       </section>
 
