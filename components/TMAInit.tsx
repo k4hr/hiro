@@ -1,21 +1,36 @@
+/* path: components/TMAInit.tsx */
 'use client';
 
 import { useEffect } from 'react';
 
+function safe(fn: () => void) {
+  try {
+    fn();
+  } catch {}
+}
+
 export default function TMAInit() {
   useEffect(() => {
     const tg = (window as any)?.Telegram?.WebApp;
-    try {
+
+    safe(() => {
       // Сообщаем Telegram, что всё отрендерилось, и просим фуллскрин
       tg?.ready?.();
       tg?.expand?.();
 
-      // ФИКС СВЕТЛОЙ ТЕМЫ: светлый хедер/фон под наш UI
-      tg?.setHeaderColor?.('#F5F7FA');     // вместо 'secondary_bg_color'
-      tg?.setBackgroundColor?.('#F5F7FA'); // фиксированный светлый цвет
-    } catch {
-      // молчим, если не в TWA
-    }
+      // ✅ ТЁМНАЯ МИСТИЧЕСКАЯ ТЕМА
+      tg?.setHeaderColor?.('#070814');
+      tg?.setBackgroundColor?.('#070814');
+
+      // иногда полезно на всякий случай зафиксировать стиль страницы
+      document.documentElement.dataset.theme = 'dark';
+      document.documentElement.style.colorScheme = 'dark';
+      document.body.style.background = '#070814';
+      document.body.style.color = '#E9ECFF';
+
+      // косметика: если есть, скрываем лишние жесты
+      tg?.disableVerticalSwipes?.();
+    });
   }, []);
 
   return null;
