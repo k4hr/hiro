@@ -40,7 +40,7 @@ enum ShareStatus {
   EXPIRED
 }
 
-/* ✅ ДОБАВИЛИ */
+// ✅ ДОБАВИЛИ
 enum Handedness {
   RIGHT
   LEFT
@@ -84,7 +84,7 @@ model Profile {
 
   displayName String?
 
-  /* ✅ ДОБАВИЛИ (можно nullable, но мы в palm/create будем ставить) */
+  // ✅ ДОБАВИЛИ (nullable — но в palm/create будем ставить)
   handedness Handedness?
 
   @@index([userId])
@@ -142,7 +142,7 @@ model Report {
   palmScanId String?
   palmScan   PalmScan? @relation(fields: [palmScanId], references: [id], onDelete: SetNull)
 
-  input Json? @db.Json
+  input      Json?  @db.Json
   confidence Float?
 
   errorCode String?
