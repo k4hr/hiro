@@ -27,10 +27,10 @@ export default function HomePage() {
   }, []);
 
   const actions: Action[] = [
-    { title: 'Ладонь', subtitle: '2 фото → полный отчёт по линиям', href: '/palm' },
-    { title: 'Код даты', subtitle: 'Дата рождения → интерпретация чисел', href: '/date-code' },
-    { title: 'Карта рождения', subtitle: 'Дата/время/город → глубже и “точнее”', href: '/birth-chart' },
-    { title: 'Синтез', subtitle: 'Склеить всё → общий “вердикт”', href: '/synth' },
+    { title: 'Хиромант', subtitle: '2 фото → разбор линий и периодов', href: '/palm' },
+    { title: 'Код судьбы', subtitle: 'Дата → ключевые числа и 12 месяцев', href: '/date-code' },
+    { title: 'Карта неба', subtitle: 'Дата/время/город → звёздный портрет', href: '/birth-chart' },
+    { title: 'Вердикт', subtitle: 'Синтез → единая картина', href: '/synth' },
   ];
 
   const go = (href: string) => {
@@ -96,7 +96,8 @@ export default function HomePage() {
 
         .title {
           position: relative;
-          font-family: Montserrat, Manrope, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, 'Helvetica Neue', Arial;
+          font-family: Montserrat, Manrope, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, 'Helvetica Neue',
+            Arial;
           font-weight: 900;
           letter-spacing: 0.22em;
           text-transform: uppercase;
@@ -104,7 +105,6 @@ export default function HomePage() {
           line-height: 1.05;
           margin: 0 0 6px;
 
-          /* ✨ "Перелив" */
           color: transparent;
           background: linear-gradient(
             115deg,
@@ -164,12 +164,12 @@ export default function HomePage() {
           -webkit-backdrop-filter: blur(14px) saturate(140%);
           display: flex;
           align-items: center;
-          justify-content: flex-start;
+          justify-content: center; /* ✅ центрируем текст по середине кнопки */
           cursor: pointer;
           -webkit-tap-highlight-color: transparent;
           transition: transform 0.08s ease, opacity 0.08s ease, border-color 0.12s ease, background 0.12s ease;
           color: inherit;
-          text-align: left;
+          text-align: center; /* ✅ текст по центру */
           position: relative;
           overflow: hidden;
         }
