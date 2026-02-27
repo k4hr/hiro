@@ -295,7 +295,7 @@ export default function ReportClient() {
     <main className="p">
       <header className="hero">
         <div className="title">РАЗБОР</div>
-        <div className="subtitle">ИИ анализирует две ладони</div>
+        <div className="subtitle">ПРОХОДИТ АНАЛИЗ...</div>
       </header>
 
       {err ? (
@@ -375,7 +375,7 @@ export default function ReportClient() {
           </button>
         </div>
 
-        <div className="disclaimer">Это развлекательная интерпретация (хиромантия), а не медицина и не диагностика.</div>
+        <div className="disclaimer">Это не медицина и не диагностика здоровья.</div>
       </section>
 
       <style jsx>{`
