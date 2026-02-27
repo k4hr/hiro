@@ -8,10 +8,6 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ===========================
-// ✅ Типы отчётов
-// ===========================
-
 enum ReportType {
   PALM
   NUM
@@ -44,6 +40,13 @@ enum ShareStatus {
   EXPIRED
 }
 
+/* ✅ ДОБАВИЛИ */
+enum Handedness {
+  RIGHT
+  LEFT
+  AMBI
+}
+
 model User {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
@@ -54,7 +57,6 @@ model User {
   firstName  String?
   lastName   String?
 
-  // Для будущего: язык интерфейса / A-B тесты / метки
   locale String? @default("ru")
   meta   Json?   @db.Json
 
@@ -75,17 +77,15 @@ model Profile {
   userId String @unique
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  // 🔢 Код даты / ⭐ Карта рождения
-  // dob обязателен только когда пользователь реально делает NUM/ASTRO,
-  // но в БД пусть будет nullable — не заставляем на старте.
   dob       DateTime?
-  birthTime String?  // "HH:MM" (локальное время) или null, если "не знаю"
-  birthCity String?  // строка, без геокодинга в v1
-  // на будущее: страна/координаты, если захочешь точность
+  birthTime String?
+  birthCity String?
   birthMeta Json? @db.Json
 
-  // Имя можно взять из Telegram, поэтому необязательно
   displayName String?
+
+  /* ✅ ДОБАВИЛИ (можно nullable, но мы в palm/create будем ставить) */
+  handedness Handedness?
 
   @@index([userId])
   @@index([dob])
@@ -99,31 +99,24 @@ model PalmScan {
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  // 2 фото ладоней
   leftImageUrl  String?
   rightImageUrl String?
 
-  // Тех. мета файлов/загрузки, чтобы потом не гадать
   leftMeta  Json? @db.Json
   rightMeta Json? @db.Json
 
   status PalmScanStatus @default(DRAFT)
 
-  // Результат анализа ладони (JSON строго по схеме) + текстовые секции
   aiJson Json? @db.Json
   aiText String?
 
-  // Качество/доверие
   confidence  Float?
-  qualityFlag Boolean @default(false) // true = плохое фото/низкая читаемость
+  qualityFlag Boolean @default(false)
   qualityNote String?
 
-  // Ошибка, если упали на анализе
   errorCode String?
   errorText String?
 
-  // Удобно: один PalmScan обычно порождает один Report(PALM),
-  // но мы не делаем жестко 1:1, чтобы можно было пересканить и оставить историю.
   reports Report[]
 
   @@index([userId])
@@ -143,25 +136,18 @@ model Report {
   type   ReportType
   status ReportStatus @default(DRAFT)
 
-  // Единый формат: json — машинный, text — красивый для UI/экспорта
   json Json? @db.Json
   text String?
 
-  // Связи с источниками
   palmScanId String?
   palmScan   PalmScan? @relation(fields: [palmScanId], references: [id], onDelete: SetNull)
 
-  // Для NUM/ASTRO/SYNTH удобно хранить входные данные/расчёты
   input Json? @db.Json
-
-  // Управление качеством/доверие
   confidence Float?
 
-  // Ошибки
   errorCode String?
   errorText String?
 
-  // Публичный доступ по ссылке/экспорт
   shares ReportShare[]
 
   @@index([userId])
@@ -185,12 +171,10 @@ model ReportShare {
 
   status ShareStatus @default(ACTIVE)
 
-  // Токен для публичной ссылки/выгрузки (не угадываемый)
   token     String   @unique
   expiresAt DateTime?
   revokedAt DateTime?
 
-  // по желанию: ограничение “один раз”
   maxViews Int?
   views    Int @default(0)
 
