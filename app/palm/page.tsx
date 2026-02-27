@@ -3,10 +3,38 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 
+function tg(): any | null {
+  try {
+    return (window as any)?.Telegram?.WebApp || null;
+  } catch {
+    return null;
+  }
+}
+
 function haptic(type: 'light' | 'medium' = 'light') {
   try {
-    (window as any)?.Telegram?.WebApp?.HapticFeedback?.impactOccurred?.(type);
+    tg()?.HapticFeedback?.impactOccurred?.(type);
   } catch {}
+}
+
+/* cookie helpers */
+function getCookie(name: string): string {
+  try {
+    const rows = document.cookie ? document.cookie.split('; ') : [];
+    for (const row of rows) {
+      const [k, ...rest] = row.split('=');
+      if (decodeURIComponent(k) === name) return decodeURIComponent(rest.join('='));
+    }
+  } catch {}
+  return '';
+}
+
+function getInitDataNow(): string {
+  try {
+    const fromTg = String(tg()?.initData || '').trim();
+    if (fromTg) return fromTg;
+  } catch {}
+  return String(getCookie('tg_init_data') || '').trim();
 }
 
 type Handedness = 'RIGHT' | 'LEFT' | 'AMBI';
@@ -60,23 +88,48 @@ function formatDob(dd: string, mm: string, yyyy: string) {
   return `${d}.${m}.${yyyy}`;
 }
 
-async function uploadToR2(
-  file: File,
-  kind: 'left' | 'right'
+type CreateOk = { ok: true; scanId: string };
+type CreateErr = { ok: false; error: string; hint?: string };
+type CreateResp = CreateOk | CreateErr;
+
+async function createPalmScan(initData: string, handedness: Handedness, dob: string): Promise<CreateResp> {
+  try {
+    const res = await fetch('/api/palm/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ initData, handedness, dob }),
+    });
+    const j = (await res.json().catch(() => null)) as any;
+    if (!res.ok || !j || j.ok !== true || typeof j.scanId !== 'string') {
+      return { ok: false, error: j?.error ? String(j.error) : `CREATE_FAILED(${res.status})`, hint: j?.hint ? String(j.hint) : undefined };
+    }
+    return { ok: true, scanId: String(j.scanId) };
+  } catch (e: any) {
+    return { ok: false, error: 'CREATE_FAILED', hint: String(e?.message || 'network') };
+  }
+}
+
+async function uploadPalmPhoto(
+  initData: string,
+  scanId: string,
+  side: 'left' | 'right',
+  file: File
 ): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
   try {
     const fd = new FormData();
-    fd.append('file', file);
-    fd.append('kind', kind);
+    fd.set('initData', initData);
+    fd.set('scanId', scanId);
+    fd.set('side', side);
+    fd.set('photo', file);
 
-    const res = await fetch('/api/r2/upload', { method: 'POST', body: fd });
+    const res = await fetch('/api/palm/upload', { method: 'POST', body: fd });
     const j = (await res.json().catch(() => null)) as any;
 
     if (!res.ok || !j || j.ok !== true || typeof j.url !== 'string') {
       const msg = j?.error ? String(j.error) : `Ошибка загрузки (${res.status})`;
       return { ok: false, error: msg };
     }
-    return { ok: true, url: j.url };
+    return { ok: true, url: String(j.url) };
   } catch (e: any) {
     return { ok: false, error: e?.message ? String(e.message) : 'Сеть/сервер недоступны.' };
   }
@@ -85,8 +138,8 @@ async function uploadToR2(
 export default function PalmPage() {
   useEffect(() => {
     try {
-      (window as any)?.Telegram?.WebApp?.ready?.();
-      (window as any)?.Telegram?.WebApp?.expand?.();
+      tg()?.ready?.();
+      tg()?.expand?.();
     } catch {}
   }, []);
 
@@ -102,11 +155,15 @@ export default function PalmPage() {
   const dobOk = useMemo(() => isDobPartsOk(dd.trim(), mm.trim(), yyyy.trim()), [dd, mm, yyyy]);
   const dobStr = useMemo(() => (dobOk ? formatDob(dd.trim(), mm.trim(), yyyy.trim()) : ''), [dobOk, dd, mm, yyyy]);
 
+  const canShowDob = handedness !== null;
+  const canShowUploads = canShowDob && dobOk;
+
+  const [scanId, setScanId] = useState<string>('');
+  const [scanErr, setScanErr] = useState<string>('');
+
   const [left, setLeft] = useState<UploadState>({ uploading: false });
   const [right, setRight] = useState<UploadState>({ uploading: false });
 
-  const canShowDob = handedness !== null;
-  const canShowUploads = canShowDob && dobOk;
   const bothUploaded = Boolean(left.url) && Boolean(right.url);
 
   const options = useMemo(
@@ -146,23 +203,11 @@ export default function PalmPage() {
   const setHand = (v: Handedness) => {
     haptic('medium');
     setHandedness(v);
-  };
-
-  const onPickFile = async (file: File | null, side: 'left' | 'right') => {
-    if (!file) return;
-
-    haptic('light');
-
-    const set = side === 'left' ? setLeft : setRight;
-    set({ uploading: true, fileName: file.name });
-
-    const r = await uploadToR2(file, side);
-    if (!r.ok) {
-      set({ uploading: false, fileName: file.name, error: r.error });
-      return;
-    }
-
-    set({ uploading: false, fileName: file.name, url: r.url });
+    // если пользователь поменял руку — сбрасываем draft
+    setScanId('');
+    setScanErr('');
+    setLeft({ uploading: false });
+    setRight({ uploading: false });
   };
 
   const activeHandText = useMemo(() => {
@@ -172,11 +217,63 @@ export default function PalmPage() {
     return '';
   }, [handedness]);
 
-  const submitDisabled = !handedness || !dobOk || !bothUploaded || selectedCount === 0;
+  // ✅ создаём PalmScan DRAFT как только есть handedness + валидная дата
+  useEffect(() => {
+    const run = async () => {
+      if (!handedness || !dobOk) return;
+      if (scanId) return;
+
+      const initData = getInitDataNow();
+      if (!initData) {
+        setScanErr('NO_INIT_DATA');
+        return;
+      }
+
+      setScanErr('');
+      const r = await createPalmScan(initData, handedness, dobStr);
+      if (!r.ok) {
+        setScanErr(r.hint ? `${r.error}: ${r.hint}` : r.error);
+        return;
+      }
+      setScanId(r.scanId);
+    };
+    run();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [handedness, dobOk, dobStr]);
+
+  const onPickFile = async (file: File | null, side: 'left' | 'right') => {
+    if (!file) return;
+
+    const initData = getInitDataNow();
+    if (!initData) {
+      setScanErr('NO_INIT_DATA');
+      return;
+    }
+    if (!scanId) {
+      setScanErr('NO_SCAN_ID');
+      return;
+    }
+
+    haptic('light');
+
+    const set = side === 'left' ? setLeft : setRight;
+    set({ uploading: true, fileName: file.name });
+
+    const r = await uploadPalmPhoto(initData, scanId, side, file);
+    if (!r.ok) {
+      set({ uploading: false, fileName: file.name, error: r.error });
+      return;
+    }
+
+    set({ uploading: false, fileName: file.name, url: r.url });
+  };
+
+  const submitDisabled = !handedness || !dobOk || !bothUploaded || selectedCount === 0 || !scanId;
 
   const onSubmit = () => {
     haptic('medium');
     console.log('submit', {
+      scanId,
       handedness,
       dob: dobStr,
       leftUrl: left.url,
@@ -210,6 +307,13 @@ export default function PalmPage() {
         <div className="subtitle">две ладони · один отчёт</div>
       </header>
 
+      {scanErr ? (
+        <section className="card" aria-label="Ошибка">
+          <div className="label">Ошибка</div>
+          <div className="warn">{scanErr}</div>
+        </section>
+      ) : null}
+
       <section className="card" aria-label="Выбор ведущей руки">
         <div className="label">Кто вы?</div>
         <div className="desc">Выберите — чтобы мы правильно определили активную ладонь.</div>
@@ -234,7 +338,7 @@ export default function PalmPage() {
           <div className="label">Дата рождения</div>
           <div className="desc">День · месяц · год</div>
 
-          <div className={`dob ${dd || mm || yyyy ? (dobOk ? 'dob--ok' : 'dob--bad') : ''}`}>
+          <div className="dob">
             <div className="dobField">
               <div className="dobLabel">День</div>
               <input value={dd} onChange={(e) => onDayChange(e.target.value)} inputMode="numeric" placeholder="ДД" />
@@ -252,6 +356,8 @@ export default function PalmPage() {
           </div>
 
           {dd || mm || yyyy ? (dobOk ? <div className="hint">Ок: {dobStr}</div> : <div className="warn">Проверь дату.</div>) : null}
+          {dobOk && handedness && !scanId ? <div className="hint">Создаём черновик…</div> : null}
+          {scanId ? <div className="hint">Scan ID: {scanId}</div> : null}
         </section>
       ) : null}
 
@@ -263,9 +369,14 @@ export default function PalmPage() {
           <div className="stack">
             <div className="u">
               <div className="uTitle">Загрузите левую ладонь</div>
-              <label className={`pick ${left.uploading ? 'is-loading' : ''}`}>
-                <input type="file" accept="image/*" onChange={(e) => onPickFile(e.target.files?.[0] ?? null, 'left')} />
-                {left.url ? 'Загружено ✓' : left.uploading ? 'Загружаю…' : 'Выбрать фото'}
+              <label className={`pick ${left.uploading ? 'is-loading' : ''} ${!scanId ? 'is-disabled' : ''}`}>
+                <input
+                  type="file"
+                  accept="image/*"
+                  disabled={!scanId}
+                  onChange={(e) => onPickFile(e.target.files?.[0] ?? null, 'left')}
+                />
+                {left.url ? 'Загружено ✓' : left.uploading ? 'Загружаю…' : !scanId ? 'Подготовка…' : 'Выбрать фото'}
               </label>
               <div className="meta">
                 {left.fileName ? <div className="metaLine">{left.fileName}</div> : <div className="metaLine muted">Файл не выбран</div>}
@@ -275,9 +386,14 @@ export default function PalmPage() {
 
             <div className="u">
               <div className="uTitle">Загрузите правую ладонь</div>
-              <label className={`pick ${right.uploading ? 'is-loading' : ''}`}>
-                <input type="file" accept="image/*" onChange={(e) => onPickFile(e.target.files?.[0] ?? null, 'right')} />
-                {right.url ? 'Загружено ✓' : right.uploading ? 'Загружаю…' : 'Выбрать фото'}
+              <label className={`pick ${right.uploading ? 'is-loading' : ''} ${!scanId ? 'is-disabled' : ''}`}>
+                <input
+                  type="file"
+                  accept="image/*"
+                  disabled={!scanId}
+                  onChange={(e) => onPickFile(e.target.files?.[0] ?? null, 'right')}
+                />
+                {right.url ? 'Загружено ✓' : right.uploading ? 'Загружаю…' : !scanId ? 'Подготовка…' : 'Выбрать фото'}
               </label>
               <div className="meta">
                 {right.fileName ? <div className="metaLine">{right.fileName}</div> : <div className="metaLine muted">Файл не выбран</div>}
@@ -327,17 +443,15 @@ export default function PalmPage() {
       ) : null}
 
       <style jsx>{`
-        /* ✅ ЖЁСТКО ВЕРТИКАЛЬНО: ничего не "расползается" по ширине */
         .p {
           min-height: 100dvh;
           padding: 0 0 calc(env(safe-area-inset-bottom, 0px) + 18px);
           display: flex;
           flex-direction: column;
-          align-items: center; /* центрируем колонку */
+          align-items: center;
           gap: 12px;
         }
 
-        /* ограничиваем ширину контента (как "строго" на твоей consultations-странице) */
         .p > * {
           width: 100%;
           max-width: 520px;
@@ -395,15 +509,9 @@ export default function PalmPage() {
         }
 
         @keyframes shimmer {
-          0% {
-            background-position: 0% 50%;
-          }
-          50% {
-            background-position: 100% 50%;
-          }
-          100% {
-            background-position: 0% 50%;
-          }
+          0% { background-position: 0% 50%; }
+          50% { background-position: 100% 50%; }
+          100% { background-position: 0% 50%; }
         }
 
         .subtitle {
@@ -424,8 +532,8 @@ export default function PalmPage() {
           -webkit-backdrop-filter: blur(16px) saturate(140%);
           display: flex;
           flex-direction: column;
-          gap: 10px; /* ✅ вертикальная ритмика */
-          overflow: hidden; /* ✅ никакого расползания */
+          gap: 10px;
+          overflow: hidden;
         }
 
         .label {
@@ -479,6 +587,7 @@ export default function PalmPage() {
           color: rgba(233, 236, 255, 0.62);
           padding-top: 10px;
           border-top: 1px solid rgba(233, 236, 255, 0.10);
+          overflow-wrap: anywhere;
         }
 
         .warn {
@@ -488,7 +597,6 @@ export default function PalmPage() {
           overflow-wrap: anywhere;
         }
 
-        /* ✅ ДАТА: тоже строго вертикально — лейблы сверху, поля ниже, без "расползания" */
         .dob {
           display: grid;
           grid-template-columns: 1fr 1fr 1.35fr;
@@ -564,6 +672,11 @@ export default function PalmPage() {
           opacity: 0.85;
         }
 
+        .pick.is-disabled {
+          opacity: 0.55;
+          cursor: not-allowed;
+        }
+
         .pick:active {
           transform: scale(0.98);
           opacity: 0.92;
@@ -613,7 +726,7 @@ export default function PalmPage() {
         }
 
         .optText {
-          min-width: 0; /* ✅ чтобы текст не растягивал */
+          min-width: 0;
           flex: 1;
         }
 
@@ -631,7 +744,7 @@ export default function PalmPage() {
         }
 
         .optR {
-          width: 78px; /* ✅ фикс чтобы ничего не “плясало” */
+          width: 78px;
           text-align: right;
           font-weight: 950;
           flex: 0 0 78px;
@@ -704,7 +817,6 @@ export default function PalmPage() {
           box-shadow: none;
         }
 
-        /* на очень узких экранах дату делаем в две строки */
         @media (max-width: 360px) {
           .dob {
             grid-template-columns: 1fr 1fr;
