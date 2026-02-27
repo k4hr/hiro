@@ -2,6 +2,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 
 function tg(): any | null {
   try {
@@ -161,6 +162,8 @@ async function uploadPalmPhoto(
 }
 
 export default function PalmPage() {
+  const router = useRouter();
+
   useEffect(() => {
     try {
       tg()?.ready?.();
@@ -298,15 +301,24 @@ export default function PalmPage() {
 
   const onSubmit = () => {
     haptic('medium');
-    console.log('submit', {
+
+    const payload = {
       scanId,
       handedness,
       dob: dobStr,
-      leftUrl: left.url,
-      rightUrl: right.url,
+      age,
+      leftUrl: left.url!,
+      rightUrl: right.url!,
       selected,
       totalRub,
-    });
+    };
+
+    try {
+      sessionStorage.setItem(`palm_submit_${scanId}`, JSON.stringify(payload));
+    } catch {}
+
+    // “как будто сразу оплачено” → сразу на страницу разбора
+    router.push(`/palm/report?scanId=${encodeURIComponent(scanId)}`);
   };
 
   const onDayChange = (v: string) => {
@@ -393,7 +405,11 @@ export default function PalmPage() {
 
           {dd || mm || yyyy ? (dobOk ? <div className="hint center">Ок: {dobStr}</div> : <div className="warn center">Проверь дату.</div>) : null}
           {dobOk && handedness && !scanId ? <div className="hint center">Создаём черновик…</div> : null}
-          {dobOk && age !== null ? <div className="hint center">Вам — <b>{age}</b> лет</div> : null}
+          {dobOk && age !== null ? (
+            <div className="hint center">
+              Вам — <b>{age}</b> лет
+            </div>
+          ) : null}
         </section>
       ) : null}
 
@@ -562,9 +578,15 @@ export default function PalmPage() {
         }
 
         @keyframes shimmer {
-          0% { background-position: 0% 50%; }
-          50% { background-position: 100% 50%; }
-          100% { background-position: 0% 50%; }
+          0% {
+            background-position: 0% 50%;
+          }
+          50% {
+            background-position: 100% 50%;
+          }
+          100% {
+            background-position: 0% 50%;
+          }
         }
 
         .subtitle {
@@ -603,7 +625,9 @@ export default function PalmPage() {
           line-height: 1.35;
         }
 
-        .center { text-align: center; }
+        .center {
+          text-align: center;
+        }
 
         .handStack {
           margin-top: 6px;
@@ -634,13 +658,20 @@ export default function PalmPage() {
         }
 
         .pill--on {
-          border-color: rgba(210, 179, 91, 0.40);
+          border-color: rgba(210, 179, 91, 0.4);
           box-shadow: 0 14px 38px rgba(0, 0, 0, 0.45);
         }
 
-        .pill:active { transform: scale(0.98); opacity: 0.92; }
+        .pill:active {
+          transform: scale(0.98);
+          opacity: 0.92;
+        }
 
-        .stack { display: flex; flex-direction: column; gap: 10px; }
+        .stack {
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+        }
 
         .hint {
           margin-top: 4px;
@@ -648,7 +679,7 @@ export default function PalmPage() {
           font-weight: 800;
           color: rgba(233, 236, 255, 0.62);
           padding-top: 10px;
-          border-top: 1px solid rgba(233, 236, 255, 0.10);
+          border-top: 1px solid rgba(233, 236, 255, 0.1);
           overflow-wrap: anywhere;
         }
 
@@ -659,7 +690,11 @@ export default function PalmPage() {
           overflow-wrap: anywhere;
         }
 
-        .dob { display: grid; grid-template-columns: 1fr 1fr 1.35fr; gap: 10px; }
+        .dob {
+          display: grid;
+          grid-template-columns: 1fr 1fr 1.35fr;
+          gap: 10px;
+        }
 
         .dobField {
           border-radius: 16px;
@@ -704,9 +739,9 @@ export default function PalmPage() {
         .u {
           border-radius: 18px;
           padding: 12px;
-          border: 1px solid rgba(233, 236, 255, 0.10);
+          border: 1px solid rgba(233, 236, 255, 0.1);
           background: rgba(255, 255, 255, 0.03);
-          box-shadow: 0 10px 26px rgba(0, 0, 0, 0.40);
+          box-shadow: 0 10px 26px rgba(0, 0, 0, 0.4);
         }
 
         .uTitle {
@@ -724,7 +759,7 @@ export default function PalmPage() {
           align-items: center;
           padding: 10px 12px;
           border-radius: 999px;
-          border: 1px solid rgba(210, 179, 91, 0.30);
+          border: 1px solid rgba(210, 179, 91, 0.3);
           background: rgba(255, 255, 255, 0.04);
           color: var(--text);
           font-weight: 950;
@@ -734,12 +769,22 @@ export default function PalmPage() {
           overflow: hidden;
         }
 
-        .pick input { display: none; }
+        .pick input {
+          display: none;
+        }
 
-        .pick.is-loading { opacity: 0.85; }
-        .pick.is-disabled { opacity: 0.55; cursor: not-allowed; }
+        .pick.is-loading {
+          opacity: 0.85;
+        }
+        .pick.is-disabled {
+          opacity: 0.55;
+          cursor: not-allowed;
+        }
 
-        .pick:active { transform: scale(0.98); opacity: 0.92; }
+        .pick:active {
+          transform: scale(0.98);
+          opacity: 0.92;
+        }
 
         .meta {
           margin-top: 10px;
@@ -749,8 +794,12 @@ export default function PalmPage() {
           word-break: break-word;
         }
 
-        .metaLine + .metaLine { margin-top: 4px; }
-        .muted { opacity: 0.7; }
+        .metaLine + .metaLine {
+          margin-top: 4px;
+        }
+        .muted {
+          opacity: 0.7;
+        }
 
         .opt {
           width: 100%;
@@ -770,33 +819,75 @@ export default function PalmPage() {
         }
 
         .opt--on {
-          border-color: rgba(210, 179, 91, 0.40);
+          border-color: rgba(210, 179, 91, 0.4);
           background: rgba(255, 255, 255, 0.04);
         }
 
-        .opt:active { transform: scale(0.99); opacity: 0.92; }
+        .opt:active {
+          transform: scale(0.99);
+          opacity: 0.92;
+        }
 
-        .optText { min-width: 0; flex: 1; }
-        .optT { font-weight: 950; color: rgba(233, 236, 255, 0.92); font-size: 14px; }
-        .optS { margin-top: 3px; font-size: 12px; color: rgba(233, 236, 255, 0.62); line-height: 1.25; }
+        .optText {
+          min-width: 0;
+          flex: 1;
+        }
+        .optT {
+          font-weight: 950;
+          color: rgba(233, 236, 255, 0.92);
+          font-size: 14px;
+        }
+        .optS {
+          margin-top: 3px;
+          font-size: 12px;
+          color: rgba(233, 236, 255, 0.62);
+          line-height: 1.25;
+        }
 
-        .optR { width: 78px; text-align: right; font-weight: 950; flex: 0 0 78px; }
-        .tick { color: rgba(210, 179, 91, 0.95); font-size: 18px; }
-        .plus { color: rgba(233, 236, 255, 0.70); font-size: 12px; white-space: nowrap; }
+        .optR {
+          width: 78px;
+          text-align: right;
+          font-weight: 950;
+          flex: 0 0 78px;
+        }
+        .tick {
+          color: rgba(210, 179, 91, 0.95);
+          font-size: 18px;
+        }
+        .plus {
+          color: rgba(233, 236, 255, 0.7);
+          font-size: 12px;
+          white-space: nowrap;
+        }
 
         .total {
           margin-top: 2px;
           padding-top: 12px;
-          border-top: 1px solid rgba(233, 236, 255, 0.10);
+          border-top: 1px solid rgba(233, 236, 255, 0.1);
           display: flex;
           align-items: center;
           justify-content: space-between;
           gap: 10px;
         }
 
-        .totalT { font-weight: 950; color: rgba(233, 236, 255, 0.92); font-size: 14px; }
-        .totalS { margin-top: 3px; font-size: 12px; font-weight: 800; color: rgba(233, 236, 255, 0.62); }
-        .totalR { font-weight: 950; color: rgba(210, 179, 91, 0.95); font-size: 16px; letter-spacing: 0.02em; white-space: nowrap; }
+        .totalT {
+          font-weight: 950;
+          color: rgba(233, 236, 255, 0.92);
+          font-size: 14px;
+        }
+        .totalS {
+          margin-top: 3px;
+          font-size: 12px;
+          font-weight: 800;
+          color: rgba(233, 236, 255, 0.62);
+        }
+        .totalR {
+          font-weight: 950;
+          color: rgba(210, 179, 91, 0.95);
+          font-size: 16px;
+          letter-spacing: 0.02em;
+          white-space: nowrap;
+        }
 
         .send {
           margin-top: 2px;
@@ -812,13 +903,24 @@ export default function PalmPage() {
           -webkit-tap-highlight-color: transparent;
         }
 
-        .send:active { transform: scale(0.98); opacity: 0.92; }
+        .send:active {
+          transform: scale(0.98);
+          opacity: 0.92;
+        }
 
-        .send--off { opacity: 0.55; cursor: not-allowed; box-shadow: none; }
+        .send--off {
+          opacity: 0.55;
+          cursor: not-allowed;
+          box-shadow: none;
+        }
 
         @media (max-width: 360px) {
-          .dob { grid-template-columns: 1fr 1fr; }
-          .dobField:last-child { grid-column: 1 / -1; }
+          .dob {
+            grid-template-columns: 1fr 1fr;
+          }
+          .dobField:last-child {
+            grid-column: 1 / -1;
+          }
         }
 
         /* ===== MODAL ===== */
@@ -851,7 +953,7 @@ export default function PalmPage() {
           justify-content: space-between;
           gap: 12px;
           padding: 12px 12px 10px;
-          border-bottom: 1px solid rgba(233, 236, 255, 0.10);
+          border-bottom: 1px solid rgba(233, 236, 255, 0.1);
         }
 
         .modalTitle {
@@ -866,7 +968,7 @@ export default function PalmPage() {
           border-radius: 999px;
           border: 1px solid rgba(233, 236, 255, 0.14);
           background: rgba(255, 255, 255, 0.04);
-          color: rgba(233, 236, 255, 0.90);
+          color: rgba(233, 236, 255, 0.9);
           font-weight: 950;
           cursor: pointer;
           -webkit-tap-highlight-color: transparent;
@@ -887,7 +989,7 @@ export default function PalmPage() {
           width: 100%;
           height: auto;
           border-radius: 16px;
-          border: 1px solid rgba(233, 236, 255, 0.10);
+          border: 1px solid rgba(233, 236, 255, 0.1);
           background: rgba(255, 255, 255, 0.02);
           display: block;
         }
