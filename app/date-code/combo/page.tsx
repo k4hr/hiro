@@ -101,7 +101,6 @@ function calcAge(dd: string, mm: string, yyyy: string) {
 }
 
 function cleanName(v: string) {
-  // мягко: убираем лишние пробелы, режем длину
   return v.replace(/\s+/g, ' ').trim().slice(0, 64);
 }
 
@@ -157,7 +156,7 @@ export default function DateCodeComboPage() {
     COMBO_COMM: true,
     COMBO_ENERGY: true,
     COMBO_LESSON: true,
-    SUMMARY: true, // фикс
+    SUMMARY: true,
   });
 
   const toggleOption = (k: OptionKey) => {
@@ -222,18 +221,17 @@ export default function DateCodeComboPage() {
       sessionStorage.setItem(storageKey, JSON.stringify(payload));
     } catch {}
 
-    // ✅ Сохраняем выбор в БД (Report(type=NUM, numMode=COMBO, numDob1, numName1 + input Json)
+    // ✅ ВАЖНО: отдельный submit для COMBO → /api/combo/submit (не /api/num/submit)
     try {
       const initData = getInitDataNow();
       if (initData) {
-        await fetch('/api/num/submit', {
+        await fetch('/api/combo/submit', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             initData,
-            mode: 'COMBO',
-            dob1: payload.dob,
-            name1: payload.name,
+            dob: payload.dob,
+            name: payload.name,
             age: payload.age,
             selected: payload.selected,
             totalRub: payload.totalRub,
