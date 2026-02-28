@@ -40,11 +40,17 @@ enum ShareStatus {
   EXPIRED
 }
 
-// ✅ ДОБАВИЛИ
 enum Handedness {
   RIGHT
   LEFT
   AMBI
+}
+
+// ✅ ДЛЯ НУМЕРОЛОГИИ (КОД СУДЬБЫ)
+enum NumMode {
+  DATE
+  COMBO
+  COMPAT
 }
 
 model User {
@@ -84,7 +90,6 @@ model Profile {
 
   displayName String?
 
-  // ✅ ДОБАВИЛИ (nullable — но в palm/create будем ставить)
   handedness Handedness?
 
   @@index([userId])
@@ -142,6 +147,13 @@ model Report {
   palmScanId String?
   palmScan   PalmScan? @relation(fields: [palmScanId], references: [id], onDelete: SetNull)
 
+  // ✅ НУМЕРОЛОГИЯ (структурируем, но основное всё равно можно хранить в input Json)
+  numMode   NumMode?
+  numDob1   DateTime?
+  numName1  String?
+  numDob2   DateTime?
+  numName2  String?
+
   input      Json?  @db.Json
   confidence Float?
 
@@ -156,6 +168,10 @@ model Report {
   @@index([createdAt])
   @@index([userId, type, createdAt])
   @@index([palmScanId])
+
+  @@index([numMode])
+  @@index([numDob1])
+  @@index([numDob2])
 }
 
 model ReportShare {
