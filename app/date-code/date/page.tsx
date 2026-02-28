@@ -4,10 +4,38 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
+function tg(): any | null {
+  try {
+    return (window as any)?.Telegram?.WebApp || null;
+  } catch {
+    return null;
+  }
+}
+
 function haptic(type: 'light' | 'medium' = 'light') {
   try {
-    (window as any)?.Telegram?.WebApp?.HapticFeedback?.impactOccurred?.(type);
+    tg()?.HapticFeedback?.impactOccurred?.(type);
   } catch {}
+}
+
+/* cookie helpers */
+function getCookie(name: string): string {
+  try {
+    const rows = document.cookie ? document.cookie.split('; ') : [];
+    for (const row of rows) {
+      const [k, ...rest] = row.split('=');
+      if (decodeURIComponent(k) === name) return decodeURIComponent(rest.join('='));
+    }
+  } catch {}
+  return '';
+}
+
+function getInitDataNow(): string {
+  try {
+    const fromTg = String(tg()?.initData || '').trim();
+    if (fromTg) return fromTg;
+  } catch {}
+  return String(getCookie('tg_init_data') || '').trim();
 }
 
 const PRICE_RUB = 19;
@@ -68,8 +96,8 @@ export default function DateCodeDatePage() {
 
   useEffect(() => {
     try {
-      (window as any)?.Telegram?.WebApp?.ready?.();
-      (window as any)?.Telegram?.WebApp?.expand?.();
+      tg()?.ready?.();
+      tg()?.expand?.();
     } catch {}
   }, []);
 
@@ -140,7 +168,7 @@ export default function DateCodeDatePage() {
     setYyyy(clean);
   };
 
-  const onSubmit = () => {
+  const onSubmit = async () => {
     haptic('medium');
     if (!dobOk) return;
 
@@ -148,7 +176,7 @@ export default function DateCodeDatePage() {
       mode: 'DATE' as const,
       dob: dobStr,
       age,
-      selected,
+      selected: { ...selected, SUMMARY: true }, // железно
       totalRub,
       priceRub: PRICE_RUB,
       summaryPriceRub: SUMMARY_PRICE_RUB,
@@ -158,6 +186,29 @@ export default function DateCodeDatePage() {
     try {
       sessionStorage.setItem(`date_code_date_${dobStr}`, JSON.stringify(payload));
     } catch {}
+
+    // ✅ Сохраняем выбор в БД, чтобы отчёт открывался потом
+    try {
+      const initData = getInitDataNow();
+      if (initData) {
+        await fetch('/api/num/submit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            initData,
+            mode: 'DATE',
+            dob: payload.dob,
+            age: payload.age,
+            selected: payload.selected,
+            totalRub: payload.totalRub,
+            priceRub: payload.priceRub,
+            summaryPriceRub: payload.summaryPriceRub,
+          }),
+        });
+      }
+    } catch {
+      // UX не ломаем
+    }
 
     router.push(`/date-code/date/report?dob=${encodeURIComponent(dobStr)}`);
   };
