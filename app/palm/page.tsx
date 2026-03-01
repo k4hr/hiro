@@ -501,7 +501,7 @@ export default function PalmPage() {
       {bothUploaded ? (
         <section className="card" aria-label="Выбор блоков разбора">
           <div className="label">Что будем рассматривать</div>
-          <div className="desc">Нажмите на пункт — появится ✓ и +{PRICE_RUB} ₽</div>
+          <div className="desc">Выберите необходимые пункты</div>
 
           <div className="stack">
             {options.map((o) => {
