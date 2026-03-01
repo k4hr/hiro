@@ -38,8 +38,8 @@ function getInitDataNow(): string {
   return String(getCookie('tg_init_data') || '').trim();
 }
 
-const PRICE_RUB = 29;
-const SUMMARY_PRICE_RUB = 29;
+const PRICE_RUB = 39;
+const SUMMARY_PRICE_RUB = 49;
 
 type OptionKey =
   | 'ACOMPAT_LOVE'
@@ -197,12 +197,12 @@ export default function AstroCompatPage() {
   const options = useMemo(
     () =>
       [
-        { key: 'ACOMPAT_LOVE' as const, title: 'Любовь и близость', sub: 'романтика, привязанность, как “держится” связь', price: PRICE_RUB, fixed: false },
-        { key: 'ACOMPAT_SEX' as const, title: 'Секс и страсть', sub: 'влечение, ревность, границы, сила/контроль', price: PRICE_RUB, fixed: false },
-        { key: 'ACOMPAT_MONEY' as const, title: 'Деньги и ресурсы', sub: 'траты, стратегия, риски, “кто рулит”', price: PRICE_RUB, fixed: false },
-        { key: 'ACOMPAT_CONFLICT' as const, title: 'Конфликты и примирение', sub: 'триггеры, как вы ссоритесь и миритесь', price: PRICE_RUB, fixed: false },
-        { key: 'ACOMPAT_FAMILY' as const, title: 'Быт и семья', sub: 'дом, ответственность, долгий формат', price: PRICE_RUB, fixed: false },
-        { key: 'ACOMPAT_FORMULA' as const, title: 'Итог: формула пары (фраза + 7 правил)', sub: 'итог всегда включён и стоит 29 ₽', price: SUMMARY_PRICE_RUB, fixed: true },
+        { key: 'ACOMPAT_LOVE' as const, title: 'Любовь и близость', sub: 'Романтика, привязанность, как “держится” связь', price: PRICE_RUB, fixed: false },
+        { key: 'ACOMPAT_SEX' as const, title: 'Секс и страсть', sub: 'Влечение, ревность, границы, сила/контроль', price: PRICE_RUB, fixed: false },
+        { key: 'ACOMPAT_MONEY' as const, title: 'Деньги и ресурсы', sub: 'Траты, стратегия, риски, “кто главный”', price: PRICE_RUB, fixed: false },
+        { key: 'ACOMPAT_CONFLICT' as const, title: 'Конфликты и примирение', sub: 'Как вы ссоритесь и миритесь', price: PRICE_RUB, fixed: false },
+        { key: 'ACOMPAT_FAMILY' as const, title: 'Быт и семья', sub: 'Дом, ответственность', price: PRICE_RUB, fixed: false },
+        { key: 'ACOMPAT_FORMULA' as const, title: 'Итог', sub: 'Формула пары', price: SUMMARY_PRICE_RUB, fixed: true },
       ] as const,
     []
   );
@@ -461,7 +461,7 @@ export default function AstroCompatPage() {
       {baseOk ? (
         <section className="card">
           <div className="label">Что разобрать</div>
-          <div className="desc">Пункты по 29 ₽. Итог всегда включён и стоит 29 ₽.</div>
+          <div className="desc">Выберите необходимые пункты.</div>
 
           <div className="stack">
             {options.map((o) => {
