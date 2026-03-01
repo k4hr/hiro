@@ -147,12 +147,18 @@ model Report {
   palmScanId String?
   palmScan   PalmScan? @relation(fields: [palmScanId], references: [id], onDelete: SetNull)
 
-  // ✅ НУМЕРОЛОГИЯ (структурируем, но основное всё равно можно хранить в input Json)
+  // ✅ НУМЕРОЛОГИЯ
   numMode   NumMode?
   numDob1   DateTime?
   numName1  String?
   numDob2   DateTime?
   numName2  String?
+
+  // ✅ АСТРОЛОГИЯ (КАРТА НЕБА)
+  astroDob           DateTime?
+  astroTime          String?
+  astroCity          String?
+  astroAccuracyLevel Int?
 
   input      Json?  @db.Json
   confidence Float?
@@ -172,6 +178,12 @@ model Report {
   @@index([numMode])
   @@index([numDob1])
   @@index([numDob2])
+
+  @@index([astroDob])
+  @@index([astroCity])
+  @@index([astroTime])
+  @@index([astroAccuracyLevel])
+  @@index([userId, astroDob, astroCity, astroTime])
 }
 
 model ReportShare {
