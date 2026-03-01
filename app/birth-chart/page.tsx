@@ -38,8 +38,8 @@ function getInitDataNow(): string {
   return String(getCookie('tg_init_data') || '').trim();
 }
 
-const PRICE_RUB = 29;
-const SUMMARY_PRICE_RUB = 29;
+const PRICE_RUB = 39;
+const SUMMARY_PRICE_RUB = 49;
 
 type OptionKey =
   | 'ASTRO_PERSON'
@@ -159,12 +159,12 @@ export default function BirthChartPage() {
   const options = useMemo(
     () =>
       [
-        { key: 'ASTRO_PERSON' as const, title: 'Портрет личности', sub: 'ядро, эмоции, стиль, внутренний мотор', price: PRICE_RUB, fixed: false },
-        { key: 'ASTRO_LOVE' as const, title: 'Любовь и отношения', sub: 'тип партнёра, триггеры, правила гармонии', price: PRICE_RUB, fixed: false },
-        { key: 'ASTRO_MONEY' as const, title: 'Деньги, богатство, успех', sub: 'как приходят деньги, рост и ловушки', price: PRICE_RUB, fixed: false },
-        { key: 'ASTRO_CAREER' as const, title: 'Карьера и предназначение', sub: 'роль, куда расти, что тормозит, сильные сферы', price: PRICE_RUB, fixed: false },
-        { key: 'ASTRO_TIMING' as const, title: 'Тайминг на год + 12 месяцев', sub: 'месяцы-фокусы: деньги, отношения, карьера, обучение', price: PRICE_RUB, fixed: false },
-        { key: 'ASTRO_FORMULA' as const, title: 'Итог: формула карты (фраза + 7 правил)', sub: 'итог всегда включён и стоит 29 ₽', price: SUMMARY_PRICE_RUB, fixed: true },
+        { key: 'ASTRO_PERSON' as const, title: 'Портрет личности', sub: 'Ядро, эмоции, стиль, внутренний мотор', price: PRICE_RUB, fixed: false },
+        { key: 'ASTRO_LOVE' as const, title: 'Любовь и отношения', sub: 'Тип партнёра, триггеры, правила гармонии', price: PRICE_RUB, fixed: false },
+        { key: 'ASTRO_MONEY' as const, title: 'Деньги, богатство, успех', sub: 'Как приходят деньги, рост и ловушки', price: PRICE_RUB, fixed: false },
+        { key: 'ASTRO_CAREER' as const, title: 'Карьера и предназначение', sub: 'Роль, куда расти, что тормозит, сильные сферы', price: PRICE_RUB, fixed: false },
+        { key: 'ASTRO_TIMING' as const, title: 'Тайминг на год', sub: 'Деньги, отношения, карьера, обучение', price: PRICE_RUB, fixed: false },
+        { key: 'ASTRO_FORMULA' as const, title: 'Итог', sub: 'Формула карты', price: SUMMARY_PRICE_RUB, fixed: true },
       ] as const,
     []
   );
@@ -378,7 +378,7 @@ export default function BirthChartPage() {
       {baseOk ? (
         <section className="card" aria-label="Выбор пунктов">
           <div className="label">Что разобрать</div>
-          <div className="desc">Пункты по 29 ₽. Итог всегда включён и стоит 29 ₽.</div>
+          <div className="desc">Выберите необходимые пункты.</div>
 
           <div className="stack">
             {options.map((o) => {
