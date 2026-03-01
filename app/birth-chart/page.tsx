@@ -209,7 +209,6 @@ export default function BirthChartPage() {
   const onMinChange = (v: string) => setMin(v.replace(/\D/g, '').slice(0, 2));
 
   const accuracyLevel = useMemo(() => {
-    // 1: дата, 2: дата+место, 3: дата+место+время
     if (!dobOk) return 0;
     if (hasPlace && timeStr) return 3;
     if (hasPlace) return 2;
@@ -280,12 +279,25 @@ export default function BirthChartPage() {
     router.push('/');
   };
 
+  const goAstroCompat = () => {
+    haptic('medium');
+    router.push('/astro-compat');
+  };
+
   return (
     <main className="p">
       <header className="hero" aria-label="Заголовок">
         <div className="title">АРКАНУМ</div>
         <div className="subtitle">карта неба</div>
       </header>
+
+      {/* ✅ выделенная кнопка astro-compat */}
+      <section className="card" aria-label="Совместимость">
+        <button type="button" className="compatBtn" onClick={goAstroCompat}>
+          Проверить астрологическую совместимость
+        </button>
+        <div className="compatHint">Отдельный режим: 2 человека → совместимость по карте неба.</div>
+      </section>
 
       <section className="card" aria-label="Данные рождения">
         <div className="label center">Данные рождения</div>
@@ -313,7 +325,8 @@ export default function BirthChartPage() {
           </div>
         ) : null}
 
-        <div className="row2">
+        {/* ✅ место и время теперь в разных строках */}
+        <div className="row1">
           <div className="box">
             <div className="miniLabel">Место рождения (опционально)</div>
             <input
@@ -326,7 +339,9 @@ export default function BirthChartPage() {
             />
             {place ? <div className={`miniHint ${hasPlace ? 'miniHint--ok' : ''}`}>{hasPlace ? 'Место принято' : 'Введите чуть точнее'}</div> : null}
           </div>
+        </div>
 
+        <div className="row1">
           <div className="box">
             <div className="miniLabel">Время рождения (опционально)</div>
             <div className="time">
@@ -334,7 +349,11 @@ export default function BirthChartPage() {
               <div className="colon">:</div>
               <input value={min} onChange={(e) => onMinChange(e.target.value)} inputMode="numeric" placeholder="ММ" />
             </div>
-            {hasTime ? <div className={`miniHint ${timeOk ? 'miniHint--ok' : ''}`}>{timeOk ? `Ок: ${timeStr}` : 'Проверь время'}</div> : <div className="miniHint">Можно пропустить</div>}
+            {hasTime ? (
+              <div className={`miniHint ${timeOk ? 'miniHint--ok' : ''}`}>{timeOk ? `Ок: ${timeStr}` : 'Проверь время'}</div>
+            ) : (
+              <div className="miniHint">Можно пропустить</div>
+            )}
           </div>
         </div>
 
@@ -504,6 +523,32 @@ export default function BirthChartPage() {
           overflow: hidden;
         }
 
+        .compatBtn {
+          width: 100%;
+          border-radius: 999px;
+          padding: 13px 14px;
+          font-size: 14px;
+          font-weight: 950;
+          cursor: pointer;
+          -webkit-tap-highlight-color: transparent;
+          border: 1px solid rgba(139, 92, 246, 0.45);
+          color: rgba(233, 236, 255, 0.95);
+          background: rgba(139, 92, 246, 0.14);
+          box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(139, 92, 246, 0.12);
+        }
+
+        .compatBtn:active {
+          transform: scale(0.99);
+          opacity: 0.92;
+        }
+
+        .compatHint {
+          font-size: 12px;
+          font-weight: 800;
+          color: rgba(233, 236, 255, 0.62);
+          text-align: center;
+        }
+
         .label {
           font-size: 16px;
           font-weight: 950;
@@ -556,9 +601,9 @@ export default function BirthChartPage() {
           text-align: center;
         }
 
-        .row2 {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
+        .row1 {
+          display: flex;
+          flex-direction: column;
           gap: 10px;
         }
 
@@ -874,9 +919,6 @@ export default function BirthChartPage() {
           }
           .dobField:last-child {
             grid-column: 1 / -1;
-          }
-          .row2 {
-            grid-template-columns: 1fr;
           }
         }
       `}</style>
