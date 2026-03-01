@@ -38,8 +38,8 @@ function getInitDataNow(): string {
   return String(getCookie('tg_init_data') || '').trim();
 }
 
-const PRICE_RUB = 19;
-const SUMMARY_PRICE_RUB = 29;
+const PRICE_RUB = 39;
+const SUMMARY_PRICE_RUB = 49;
 
 type OptionKey = 'LIFE_PATH' | 'BIRTHDAY' | 'DIGITS' | 'PERIODS' | 'YEAR12' | 'SUMMARY';
 
@@ -115,12 +115,12 @@ export default function DateCodeDatePage() {
   const options = useMemo(
     () =>
       [
-        { key: 'LIFE_PATH' as const, title: 'Число жизненного пути', sub: 'главная тема и вектор жизни', price: PRICE_RUB, fixed: false },
-        { key: 'BIRTHDAY' as const, title: 'Число дня рождения', sub: 'врождённый талант и стиль', price: PRICE_RUB, fixed: false },
-        { key: 'DIGITS' as const, title: 'Сильные/пустые цифры', sub: 'что усилено и что прокачивать', price: PRICE_RUB, fixed: false },
-        { key: 'PERIODS' as const, title: 'Периоды и вызовы', sub: 'этапы жизни и ключевые уроки', price: PRICE_RUB, fixed: false },
-        { key: 'YEAR12' as const, title: 'Личный год + 12 месяцев', sub: 'прогноз по циклам на год', price: PRICE_RUB, fixed: false },
-        { key: 'SUMMARY' as const, title: 'Итог + общие советы', sub: 'сводка и 7 стратегических правил', price: SUMMARY_PRICE_RUB, fixed: true },
+        { key: 'LIFE_PATH' as const, title: 'Число жизненного пути', sub: 'Главная тема и вектор жизни', price: PRICE_RUB, fixed: false },
+        { key: 'BIRTHDAY' as const, title: 'Число дня рождения', sub: 'Врождённый талант и стиль', price: PRICE_RUB, fixed: false },
+        { key: 'DIGITS' as const, title: 'Сильные/пустые цифры', sub: 'Что усилено и что прокачивать', price: PRICE_RUB, fixed: false },
+        { key: 'PERIODS' as const, title: 'Периоды и вызовы', sub: 'Этапы жизни и ключевые уроки', price: PRICE_RUB, fixed: false },
+        { key: 'YEAR12' as const, title: 'Личный год + 12 месяцев', sub: 'Прогноз по циклам на год', price: PRICE_RUB, fixed: false },
+        { key: 'SUMMARY' as const, title: 'Итог + общие советы', sub: 'Сводка и 7 стратегических правил', price: SUMMARY_PRICE_RUB, fixed: true },
       ] as const,
     []
   );
@@ -257,7 +257,7 @@ export default function DateCodeDatePage() {
       {dobOk ? (
         <section className="card" aria-label="Выбор пунктов">
           <div className="label">Что включить в разбор</div>
-          <div className="desc">Пункты по 19 ₽. Итог всегда включён и стоит 29 ₽.</div>
+          <div className="desc">Выберите необходимые пункты.</div>
 
           <div className="stack">
             {options.map((o) => {
