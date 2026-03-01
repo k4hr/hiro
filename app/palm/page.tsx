@@ -200,14 +200,14 @@ export default function PalmPage() {
   const options = useMemo(
     () =>
       [
-        { key: 'HEART' as const, title: 'Линия Сердца', sub: 'эмоции, любовь, привязанности' },
-        { key: 'HEAD' as const, title: 'Линия Головы', sub: 'мышление, решения, фокус' },
-        { key: 'LIFE' as const, title: 'Линия Жизни', sub: 'ресурс, энергия, ритм' },
-        { key: 'FATE' as const, title: 'Линия Судьбы', sub: 'путь, карьера, обстоятельства' },
-        { key: 'SUN' as const, title: 'Линия Солнца', sub: 'талант, признание, удовольствие' },
-        { key: 'MERCURY' as const, title: 'Линия Меркурия', sub: 'коммуникации, деловая жилка' },
-        { key: 'MOUNTS' as const, title: 'Горы ладони', sub: 'архетипы и “сила зон”' },
-        { key: 'HANDS_DIFF' as const, title: 'Разница между руками', sub: 'что дано vs что стало' },
+        { key: 'HEART' as const, title: 'Линия Сердца', sub: 'Эмоции, любовь, привязанности' },
+        { key: 'HEAD' as const, title: 'Линия Головы', sub: 'Мышление, решения, фокус' },
+        { key: 'LIFE' as const, title: 'Линия Жизни', sub: 'Ресурс, энергия, ритм' },
+        { key: 'FATE' as const, title: 'Линия Судьбы', sub: 'Путь, карьера, обстоятельства' },
+        { key: 'SUN' as const, title: 'Линия Солнца', sub: 'Талант, признание, удовольствие' },
+        { key: 'MERCURY' as const, title: 'Линия Меркурия', sub: 'Коммуникации, деловая жилка' },
+        { key: 'MOUNTS' as const, title: 'Горы ладони', sub: 'Архетипы и “сила зон”' },
+        { key: 'HANDS_DIFF' as const, title: 'Разница между руками', sub: 'Что дано и что стало' },
       ] as const,
     []
   );
