@@ -2,7 +2,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 
 function tg(): any | null {
   try {
@@ -38,15 +38,7 @@ function getInitDataNow(): string {
 }
 
 type Handedness = 'RIGHT' | 'LEFT' | 'AMBI';
-type OptionKey =
-  | 'HEART'
-  | 'HEAD'
-  | 'LIFE'
-  | 'FATE'
-  | 'SUN'
-  | 'MERCURY'
-  | 'MOUNTS'
-  | 'HANDS_DIFF';
+type OptionKey = 'HEART' | 'HEAD' | 'LIFE' | 'FATE' | 'SUN' | 'MERCURY' | 'MOUNTS' | 'HANDS_DIFF';
 
 type Payload = {
   scanId: string;
@@ -122,24 +114,14 @@ function optionTitle(k: OptionKey) {
   }
 }
 
-function buildShareUrl(): string {
-  const envUrl = (process.env.NEXT_PUBLIC_TMA_SHARE_URL || '').trim();
-  if (envUrl) return envUrl;
+/** ✅ делимся строго этой ссылкой */
+const DIRECT_LINK = 'https://t.me/arcanumapp_bot/directlink';
 
-  try {
-    const u = new URL(window.location.href);
-    // делимся входом в приложение, а не конкретным scanId
-    return `${u.origin}/palm`;
-  } catch {
-    return '/palm';
-  }
-}
-
-function openShare() {
+function openShareDirect() {
   haptic('medium');
 
-  const url = buildShareUrl();
-  const text = 'Смотри разбор ладони в мини-приложении';
+  const url = DIRECT_LINK;
+  const text = 'Смотри мой разбор ладони в мини-приложении Арканум';
   const shareLink = `https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`;
 
   try {
@@ -157,8 +139,34 @@ function openShare() {
   }
 }
 
+async function copyToClipboard(text: string): Promise<boolean> {
+  try {
+    if (!text) return false;
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', 'true');
+      ta.style.position = 'fixed';
+      ta.style.left = '-9999px';
+      ta.style.top = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      return ok;
+    } catch {
+      return false;
+    }
+  }
+}
+
 export default function ReportClient() {
   const sp = useSearchParams();
+  const router = useRouter();
+
   const scanId = String(sp.get('scanId') || '').trim();
 
   const [payload, setPayload] = useState<Payload | null>(null);
@@ -170,6 +178,9 @@ export default function ReportClient() {
   const [err, setErr] = useState<string>('');
   const [text, setText] = useState<string>('');
   const [info, setInfo] = useState<string>('');
+
+  const [toast, setToast] = useState<string>('');
+  const toastOn = Boolean(toast);
 
   const selectedForUi = payload?.selected ?? dbSelected;
 
@@ -205,6 +216,12 @@ export default function ReportClient() {
     fetchFromDb();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scanId]);
+
+  useEffect(() => {
+    if (!toastOn) return;
+    const t = setTimeout(() => setToast(''), 1800);
+    return () => clearTimeout(t);
+  }, [toastOn]);
 
   const fetchFromDb = async () => {
     const initData = getInitDataNow();
@@ -300,10 +317,24 @@ export default function ReportClient() {
 
       setText(String(j.text));
       setLoading(false);
+
+      // после анализа обновим БД-инфо (чтобы подтянуть reportId/status)
+      fetchFromDb();
     } catch (e: any) {
       setErr(e?.message ? String(e.message) : 'NETWORK');
       setLoading(false);
     }
+  };
+
+  const onCopy = async () => {
+    haptic('light');
+    const ok = await copyToClipboard(text || '');
+    setToast(ok ? 'Скопировано' : 'Не удалось скопировать');
+  };
+
+  const goBack = () => {
+    haptic('medium');
+    router.push('/palm');
   };
 
   const showMeta = Boolean(payload || scanStatus || dbSelected);
@@ -316,10 +347,24 @@ export default function ReportClient() {
         <div className="subtitle">{ready ? 'ОТЧЁТ ГОТОВ' : loading ? 'ПРОХОДИТ АНАЛИЗ...' : 'ЗАГРУЗКА...'}</div>
       </header>
 
+      {toastOn ? (
+        <div className="toast" aria-live="polite">
+          {toast}
+        </div>
+      ) : null}
+
       {err ? (
         <section className="card">
           <div className="label">Ошибка</div>
           <div className="warn">{err}</div>
+          <div className="row">
+            <button type="button" className="btn" onClick={fetchFromDb} disabled={loading}>
+              Обновить
+            </button>
+            <button type="button" className="btn2" onClick={goBack}>
+              Назад
+            </button>
+          </div>
         </section>
       ) : null}
 
@@ -368,11 +413,21 @@ export default function ReportClient() {
 
         {text ? <pre className="out">{text}</pre> : null}
 
-        {ready ? (
-          <button type="button" className="share" onClick={openShare}>
+        <div className="row">
+          <button type="button" className="btn2" onClick={onCopy} disabled={!ready}>
+            Скопировать
+          </button>
+          <button type="button" className="btn" onClick={openShareDirect} disabled={!ready}>
             Поделиться
           </button>
-        ) : null}
+        </div>
+      </section>
+
+      {/* ✅ кнопка “Назад” как на /date-code */}
+      <section className="bottom" aria-label="Назад">
+        <button type="button" className="backBtn" onClick={goBack}>
+          Назад
+        </button>
       </section>
 
       <style jsx>{`
@@ -402,6 +457,7 @@ export default function ReportClient() {
           position: relative;
           overflow: hidden;
         }
+
         .title {
           font-family: Montserrat, Manrope, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, 'Helvetica Neue', Arial;
           font-weight: 900;
@@ -412,11 +468,28 @@ export default function ReportClient() {
           margin: 0 0 6px;
           color: rgba(233, 236, 255, 0.92);
         }
+
         .subtitle {
           font-size: 12px;
           color: rgba(233, 236, 255, 0.64);
           letter-spacing: 0.14em;
           text-transform: uppercase;
+        }
+
+        .toast {
+          width: 100%;
+          max-width: 520px;
+          padding: 10px 12px;
+          border-radius: 14px;
+          border: 1px solid rgba(233, 236, 255, 0.12);
+          background: rgba(12, 16, 32, 0.7);
+          color: rgba(233, 236, 255, 0.9);
+          font-size: 12px;
+          font-weight: 850;
+          text-align: center;
+          box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+          backdrop-filter: blur(12px);
+          -webkit-backdrop-filter: blur(12px);
         }
 
         .card {
@@ -432,12 +505,14 @@ export default function ReportClient() {
           gap: 10px;
           overflow: hidden;
         }
+
         .label {
           font-size: 16px;
           font-weight: 950;
           color: var(--text);
           letter-spacing: -0.01em;
         }
+
         .hint {
           font-size: 12px;
           font-weight: 800;
@@ -445,6 +520,7 @@ export default function ReportClient() {
           padding-top: 6px;
           overflow-wrap: anywhere;
         }
+
         .warn {
           font-size: 12px;
           font-weight: 850;
@@ -458,9 +534,11 @@ export default function ReportClient() {
           color: rgba(233, 236, 255, 0.7);
           word-break: break-word;
         }
+
         .metaLine + .metaLine {
           margin-top: 4px;
         }
+
         .muted {
           opacity: 0.7;
         }
@@ -478,21 +556,73 @@ export default function ReportClient() {
           word-break: break-word;
         }
 
-        .share {
-          margin-top: 8px;
-          border: 1px solid rgba(210, 179, 91, 0.35);
+        .row {
+          display: flex;
+          gap: 10px;
+          margin-top: 4px;
+        }
+
+        .btn,
+        .btn2 {
+          flex: 1;
           border-radius: 999px;
           padding: 12px 14px;
           font-size: 14px;
           font-weight: 950;
-          color: var(--text);
           cursor: pointer;
-          background: rgba(255, 255, 255, 0.04);
-          box-shadow: 0 14px 38px rgba(0, 0, 0, 0.45);
           -webkit-tap-highlight-color: transparent;
         }
-        .share:active {
-          transform: scale(0.98);
+
+        .btn {
+          border: 1px solid rgba(210, 179, 91, 0.35);
+          color: var(--text);
+          background: rgba(255, 255, 255, 0.04);
+          box-shadow: 0 14px 38px rgba(0, 0, 0, 0.45);
+        }
+
+        .btn:disabled,
+        .btn2:disabled {
+          opacity: 0.55;
+          cursor: not-allowed;
+          box-shadow: none;
+        }
+
+        .btn2 {
+          border: 1px solid rgba(233, 236, 255, 0.14);
+          color: rgba(233, 236, 255, 0.92);
+          background: rgba(255, 255, 255, 0.03);
+        }
+
+        .btn:active,
+        .btn2:active {
+          transform: scale(0.99);
+          opacity: 0.92;
+        }
+
+        /* ✅ кнопка назад как /date-code */
+        .bottom {
+          margin-top: 14px;
+        }
+
+        .backBtn {
+          width: 100%;
+          padding: 14px 14px;
+          border-radius: 18px;
+          border: 1px solid rgba(233, 236, 255, 0.14);
+          background: rgba(255, 255, 255, 0.03);
+          color: rgba(233, 236, 255, 0.92);
+          font-size: 14px;
+          font-weight: 900;
+          letter-spacing: 0.02em;
+          cursor: pointer;
+          -webkit-tap-highlight-color: transparent;
+          box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+          backdrop-filter: blur(16px);
+          -webkit-backdrop-filter: blur(16px);
+        }
+
+        .backBtn:active {
+          transform: scale(0.99);
           opacity: 0.92;
         }
       `}</style>
