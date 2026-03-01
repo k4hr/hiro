@@ -53,6 +53,12 @@ enum NumMode {
   COMPAT
 }
 
+// ✅ ДЛЯ АСТРОЛОГИИ
+enum AstroMode {
+  CHART
+  COMPAT
+}
+
 model User {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
@@ -154,11 +160,20 @@ model Report {
   numDob2   DateTime?
   numName2  String?
 
-  // ✅ АСТРОЛОГИЯ (КАРТА НЕБА)
+  // ✅ АСТРОЛОГИЯ
+  astroMode AstroMode?
+
+  // (КАРТА НЕБА / человек A)
   astroDob           DateTime?
   astroTime          String?
   astroCity          String?
   astroAccuracyLevel Int?
+
+  // (СОВМЕСТИМОСТЬ / человек B)
+  astroDob2           DateTime?
+  astroTime2          String?
+  astroCity2          String?
+  astroAccuracyLevel2 Int?
 
   input      Json?  @db.Json
   confidence Float?
@@ -179,11 +194,22 @@ model Report {
   @@index([numDob1])
   @@index([numDob2])
 
+  @@index([astroMode])
   @@index([astroDob])
   @@index([astroCity])
   @@index([astroTime])
   @@index([astroAccuracyLevel])
-  @@index([userId, astroDob, astroCity, astroTime])
+
+  @@index([astroDob2])
+  @@index([astroCity2])
+  @@index([astroTime2])
+  @@index([astroAccuracyLevel2])
+
+  // быстрый поиск для карты (один человек)
+  @@index([userId, astroMode, astroDob, astroCity, astroTime])
+
+  // быстрый поиск для совместимости (пара)
+  @@index([userId, astroMode, astroDob, astroCity, astroTime, astroDob2, astroCity2, astroTime2])
 }
 
 model ReportShare {
