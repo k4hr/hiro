@@ -57,7 +57,8 @@ type OptionKey =
   | 'MOUNTS'
   | 'HANDS_DIFF';
 
-const PRICE_RUB = 19;
+/** ✅ все пункты по 39 ₽ */
+const PRICE_RUB = 39;
 
 /** ✅ положи файл в /public/palm-example.png */
 const PALM_EXAMPLE_PHOTO_SRC = '/palm-example.png';
@@ -339,7 +340,6 @@ export default function PalmPage() {
       sessionStorage.setItem(`palm_submit_${scanId}`, JSON.stringify(payload));
     } catch {}
 
-    // ✅ Сохраняем выбранные пункты в БД (через Report(DRAFT).input)
     try {
       await fetch('/api/palm/submit', {
         method: 'POST',
@@ -355,11 +355,8 @@ export default function PalmPage() {
           priceRub: PRICE_RUB,
         }),
       });
-    } catch {
-      // даже если упало — UX не ломаем, пускаем дальше (v1)
-    }
+    } catch {}
 
-    // “как будто сразу оплачено” → сразу на страницу разбора
     router.push(`/palm/report?scanId=${encodeURIComponent(scanId)}`);
   };
 
@@ -388,6 +385,11 @@ export default function PalmPage() {
   const closeExample = () => {
     haptic('light');
     setExampleOpen(false);
+  };
+
+  const goBack = () => {
+    haptic('medium');
+    router.push('/');
   };
 
   return (
@@ -532,6 +534,13 @@ export default function PalmPage() {
         </section>
       ) : null}
 
+      {/* ✅ кнопка “Назад” как на /date-code */}
+      <section className="bottom" aria-label="Назад">
+        <button type="button" className="backBtn" onClick={goBack}>
+          Назад
+        </button>
+      </section>
+
       {exampleOpen ? (
         <div className="modal" role="dialog" aria-modal="true" aria-label="Пример фото ладони" onClick={closeExample}>
           <div className="modalCard" onClick={(e) => e.stopPropagation()}>
@@ -669,7 +678,6 @@ export default function PalmPage() {
           gap: 10px;
         }
 
-        /* ✅ железобетонное центрирование текста */
         .pill {
           width: 100%;
           max-width: 280px;
@@ -944,6 +952,33 @@ export default function PalmPage() {
           opacity: 0.55;
           cursor: not-allowed;
           box-shadow: none;
+        }
+
+        /* ✅ блок кнопки назад как на /date-code */
+        .bottom {
+          margin-top: 14px;
+        }
+
+        .backBtn {
+          width: 100%;
+          padding: 14px 14px;
+          border-radius: 18px;
+          border: 1px solid rgba(233, 236, 255, 0.14);
+          background: rgba(255, 255, 255, 0.03);
+          color: rgba(233, 236, 255, 0.92);
+          font-size: 14px;
+          font-weight: 900;
+          letter-spacing: 0.02em;
+          cursor: pointer;
+          -webkit-tap-highlight-color: transparent;
+          box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+          backdrop-filter: blur(16px);
+          -webkit-backdrop-filter: blur(16px);
+        }
+
+        .backBtn:active {
+          transform: scale(0.99);
+          opacity: 0.92;
         }
 
         @media (max-width: 360px) {
