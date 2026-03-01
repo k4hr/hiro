@@ -2,7 +2,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { useSearchParams, useRouter } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 
 function tg(): any | null {
   try {
@@ -18,7 +18,6 @@ function haptic(type: 'light' | 'medium' = 'light') {
   } catch {}
 }
 
-/* cookie helpers */
 function getCookie(name: string): string {
   try {
     const rows = document.cookie ? document.cookie.split('; ') : [];
@@ -38,56 +37,142 @@ function getInitDataNow(): string {
   return String(getCookie('tg_init_data') || '').trim();
 }
 
-function storageKeyAstro(dob: string, place: string, time: string) {
-  return `birth_chart_${dob}_${place}_${time}`.slice(0, 140);
-}
-
-type AstroSelected = {
-  ASTRO_PERSON?: boolean;
-  ASTRO_LOVE?: boolean;
-  ASTRO_MONEY?: boolean;
-  ASTRO_CAREER?: boolean;
-  ASTRO_TIMING?: boolean;
-  ASTRO_FORMULA?: boolean;
-};
+type OptionKey =
+  | 'ASTRO_PERSON'
+  | 'ASTRO_LOVE'
+  | 'ASTRO_MONEY'
+  | 'ASTRO_CAREER'
+  | 'ASTRO_TIMING'
+  | 'ASTRO_FORMULA';
 
 type Payload = {
   mode: 'ASTRO';
   dob: string;
-  age?: number | null;
-  birthPlace?: string;
-  birthTime?: string;
-  accuracyLevel?: number;
-  selected?: AstroSelected;
-  totalRub?: number;
-  createdAt?: string;
+  age: number | null;
+  birthPlace: string;
+  birthTime: string;
+  accuracyLevel: number;
+  selected: Record<OptionKey, boolean>;
+  totalRub: number;
+  priceRub: number;
+  summaryPriceRub: number;
+  createdAt: string;
 };
 
-type ApiOk = {
-  ok: true;
-  text: string;
-  cached?: boolean;
+type DbReport = {
+  id: string;
+  status: string;
+  createdAt: string;
+  errorCode: string | null;
+  errorText: string | null;
+  input: any | null;
 };
 
-type ApiBad = {
-  ok: false;
-  error: string;
-};
+type GetResp =
+  | {
+      ok: true;
+      report: DbReport | null;
+      text: string;
+      hasText: boolean;
+    }
+  | { ok: false; error: string; hint?: string };
+
+function safeSelectedFromDb(input: any): Record<OptionKey, boolean> | null {
+  try {
+    const sel = input?.selected;
+    if (!sel || typeof sel !== 'object') return null;
+    const keys: OptionKey[] = ['ASTRO_PERSON', 'ASTRO_LOVE', 'ASTRO_MONEY', 'ASTRO_CAREER', 'ASTRO_TIMING', 'ASTRO_FORMULA'];
+    const out: any = {};
+    for (const k of keys) out[k] = sel[k] === true;
+    out.ASTRO_FORMULA = true;
+    return out as Record<OptionKey, boolean>;
+  } catch {
+    return null;
+  }
+}
+
+function optionTitle(k: OptionKey) {
+  switch (k) {
+    case 'ASTRO_PERSON':
+      return 'Портрет личности';
+    case 'ASTRO_LOVE':
+      return 'Любовь и отношения';
+    case 'ASTRO_MONEY':
+      return 'Деньги, богатство, успех';
+    case 'ASTRO_CAREER':
+      return 'Карьера и предназначение';
+    case 'ASTRO_TIMING':
+      return 'Тайминг: год + 12 месяцев';
+    case 'ASTRO_FORMULA':
+      return 'Итог: формула карты (фраза + 7 правил)';
+    default:
+      return String(k);
+  }
+}
+
+function buildShareUrl(): string {
+  const envUrl = (process.env.NEXT_PUBLIC_TMA_SHARE_URL || '').trim();
+  if (envUrl) return envUrl;
+
+  try {
+    const u = new URL(window.location.href);
+    return `${u.origin}/birth-chart`;
+  } catch {
+    return '/birth-chart';
+  }
+}
+
+function openShare() {
+  haptic('medium');
+
+  const url = buildShareUrl();
+  const text = 'Смотри разбор “Карта неба” в мини-приложении';
+  const shareLink = `https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`;
+
+  try {
+    const w = tg();
+    if (w?.openTelegramLink) {
+      w.openTelegramLink(shareLink);
+      return;
+    }
+  } catch {}
+
+  try {
+    window.open(shareLink, '_blank');
+  } catch {
+    window.location.href = shareLink;
+  }
+}
+
+function storageKeyAstro(dob: string, place: string, time: string) {
+  return `birth_chart_${dob}_${place}_${time}`.slice(0, 140);
+}
 
 export default function ReportClient() {
   const sp = useSearchParams();
-  const router = useRouter();
 
   const dob = String(sp.get('dob') || '').trim();
   const place = String(sp.get('place') || '').trim();
   const time = String(sp.get('time') || '').trim();
 
-  const sk = useMemo(() => storageKeyAstro(dob, place, time), [dob, place, time]);
+  const [payload, setPayload] = useState<Payload | null>(null);
+  const [dbReport, setDbReport] = useState<DbReport | null>(null);
+  const [dbSelected, setDbSelected] = useState<Record<OptionKey, boolean> | null>(null);
 
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState('');
-  const [text, setText] = useState('');
-  const [title] = useState('Карта неба');
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string>('');
+  const [text, setText] = useState<string>('');
+  const [info, setInfo] = useState<string>('');
+
+  const selectedForUi = payload?.selected ?? dbSelected;
+
+  const selectedKeysRu = useMemo(() => {
+    const s = selectedForUi;
+    if (!s) return [];
+    return (Object.entries(s) as Array<[OptionKey, boolean]>)
+      .filter(([, v]) => v)
+      .map(([k]) => optionTitle(k));
+  }, [selectedForUi]);
 
   useEffect(() => {
     try {
@@ -97,79 +182,259 @@ export default function ReportClient() {
   }, []);
 
   useEffect(() => {
-    let payload: Payload | null = null;
+    if (!dob) {
+      setErr('NO_DOB');
+      return;
+    }
 
+    // 1) payload из sessionStorage (первый заход)
     try {
-      const raw = sessionStorage.getItem(sk);
-      if (raw) payload = JSON.parse(raw);
+      const raw = sessionStorage.getItem(storageKeyAstro(dob, place, time));
+      if (raw) {
+        const j = JSON.parse(raw) as Payload;
+        if (j && j.mode === 'ASTRO' && j.dob === dob) {
+          setPayload(j);
+        }
+      }
     } catch {}
 
-    const run = async () => {
-      try {
-        setLoading(true);
-        setErr('');
+    // 2) всегда тянем из БД
+    fetchFromDb();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dob, place, time]);
 
-        const initData = getInitDataNow();
+  const fetchFromDb = async () => {
+    const initData = getInitDataNow();
+    if (!initData) {
+      setErr('NO_INIT_DATA');
+      return;
+    }
 
-        const res = await fetch('/api/astro/analyze', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            initData,
-            dob: payload?.dob || dob,
-            age: payload?.age ?? null,
-            birthPlace: payload?.birthPlace || place,
-            birthTime: payload?.birthTime || time,
-            accuracyLevel: payload?.accuracyLevel ?? null,
-            selected: payload?.selected || null,
-          }),
-        });
+    setInfo('');
+    setErr('');
+    setLoading(true);
 
-        const data = (await res.json()) as ApiOk | ApiBad;
+    try {
+      const res = await fetch('/api/astro/get', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ initData, dob, birthPlace: place, birthTime: time }),
+      });
 
-        if (!data || (data as ApiBad).ok === false) {
-          throw new Error((data as ApiBad)?.error || 'Ошибка генерации отчёта');
-        }
+      const j = (await res.json().catch(() => null)) as GetResp | null;
 
-        setText((data as ApiOk).text);
-      } catch (e: any) {
-        setErr(String(e?.message || 'Ошибка'));
-      } finally {
+      if (!res.ok || !j || (j as any).ok !== true) {
+        setErr((j as any)?.error ? String((j as any).error) : `GET_FAILED(${res.status})`);
         setLoading(false);
+        return;
       }
-    };
 
-    if (dob) run();
-    else {
-      setErr('Нет даты рождения в ссылке.');
+      const rep = (j as any).report ?? null;
+      setDbReport(rep);
+
+      const selFromDb = rep?.input ? safeSelectedFromDb(rep.input) : null;
+      if (selFromDb) setDbSelected(selFromDb);
+
+      if ((j as any).hasText && (j as any).text) {
+        setText(String((j as any).text));
+        setLoading(false);
+        return;
+      }
+
+      setInfo('Отчёт ещё не создан. Сейчас запустим анализ.');
+      setLoading(false);
+
+      const s = payload?.selected ?? selFromDb;
+      const agex = payload?.age ?? (rep?.input?.age ?? null);
+      const accx = payload?.accuracyLevel ?? (rep?.input?.accuracyLevel ?? null);
+
+      const bp = payload?.birthPlace ?? place;
+      const bt = payload?.birthTime ?? time;
+
+      if (s) {
+        runAnalyze({
+          dob,
+          age: agex,
+          birthPlace: bp,
+          birthTime: bt,
+          accuracyLevel: accx,
+          selected: s,
+        });
+      }
+    } catch (e: any) {
+      setErr(e?.message ? String(e.message) : 'NETWORK');
       setLoading(false);
     }
-  }, [dob, place, time, sk]);
-
-  const back = () => {
-    haptic('light');
-    router.push('/birth-chart');
   };
+
+  const runAnalyze = async (p: {
+    dob: string;
+    age: any;
+    birthPlace: string;
+    birthTime: string;
+    accuracyLevel: any;
+    selected: Record<OptionKey, boolean>;
+  }) => {
+    const initData = getInitDataNow();
+    if (!initData) {
+      setErr('NO_INIT_DATA');
+      return;
+    }
+
+    setErr('');
+    setInfo('');
+    setText('');
+    setLoading(true);
+
+    try {
+      const res = await fetch('/api/astro/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          initData,
+          dob: p.dob,
+          age: p.age,
+          birthPlace: p.birthPlace,
+          birthTime: p.birthTime,
+          accuracyLevel: p.accuracyLevel,
+          selected: p.selected,
+        }),
+      });
+
+      const j = (await res.json().catch(() => null)) as any;
+      if (!res.ok || !j || j.ok !== true || typeof j.text !== 'string') {
+        setErr(j?.error ? String(j.error) : `ANALYZE_FAILED(${res.status})`);
+        setLoading(false);
+        return;
+      }
+
+      setText(String(j.text));
+      setLoading(false);
+    } catch (e: any) {
+      setErr(e?.message ? String(e.message) : 'NETWORK');
+      setLoading(false);
+    }
+  };
+
+  const forceAnalyze = () => {
+    haptic('medium');
+
+    const sel = payload?.selected ?? dbSelected;
+    const repInput = dbReport?.input ?? null;
+
+    const agex = payload?.age ?? (repInput?.age ?? null);
+    const accx = payload?.accuracyLevel ?? (repInput?.accuracyLevel ?? null);
+
+    const bp = payload?.birthPlace ?? (repInput?.birthPlace ?? place);
+    const bt = payload?.birthTime ?? (repInput?.birthTime ?? time);
+
+    if (!dob) {
+      setErr('NO_DOB');
+      return;
+    }
+    if (!sel) {
+      setErr('NO_SELECTED_IN_DB');
+      setInfo('Нет сохранённых пунктов. Вернись назад и нажми “Продолжить” ещё раз.');
+      return;
+    }
+
+    runAnalyze({ dob, age: agex, birthPlace: bp, birthTime: bt, accuracyLevel: accx, selected: sel });
+  };
+
+  const goBack = () => {
+    haptic('light');
+    try {
+      window.history.back();
+      return;
+    } catch {}
+    window.location.href = '/birth-chart';
+  };
+
+  const showMeta = Boolean(dob || place || time || dbSelected || payload);
+  const ready = Boolean(text) && !loading && !err;
 
   return (
     <main className="p">
       <header className="hero">
-        <div className="t">{title}</div>
-        <div className="s">
-          {dob ? `Дата: ${dob}` : ''}
-          {place ? ` · ${place}` : ''}
-          {time ? ` · ${time}` : ''}
-        </div>
+        <div className="title">РАЗБОР</div>
+        <div className="subtitle">{ready ? 'ОТЧЁТ ГОТОВ' : loading ? 'ПРОХОДИТ АНАЛИЗ...' : 'ЗАГРУЗКА...'}</div>
       </header>
 
-      <section className="card">
-        {loading ? <div className="muted">Формирую карту…</div> : null}
-        {!loading && err ? <div className="err">{err}</div> : null}
-        {!loading && !err ? <div className="txt">{text}</div> : null}
+      {err ? (
+        <section className="card">
+          <div className="label">Ошибка</div>
+          <div className="warn">{err}</div>
+          <div className="row">
+            <button type="button" className="btn" onClick={fetchFromDb} disabled={loading}>
+              Обновить
+            </button>
+            <button type="button" className="btn2" onClick={goBack}>
+              Назад
+            </button>
+          </div>
+        </section>
+      ) : null}
 
-        <button type="button" className="back" onClick={back}>
-          Назад
-        </button>
+      {info ? (
+        <section className="card">
+          <div className="label">Статус</div>
+          <div className="hint">{info}</div>
+        </section>
+      ) : null}
+
+      {showMeta ? (
+        <section className="card">
+          <div className="label">Данные</div>
+          <div className="meta">
+            <div className="metaLine">
+              <b>Дата:</b> {dob || '—'}
+            </div>
+            <div className="metaLine">
+              <b>Место:</b> {place || '—'}
+            </div>
+            <div className="metaLine">
+              <b>Время:</b> {time || '—'}
+            </div>
+
+            {selectedKeysRu.length ? (
+              <div className="metaLine">
+                <b>Пункты:</b> {selectedKeysRu.join(', ')}
+              </div>
+            ) : (
+              <div className="metaLine muted">Пункты не найдены.</div>
+            )}
+          </div>
+        </section>
+      ) : null}
+
+      <section className="card">
+        <div className="label">Отчёт</div>
+
+        {loading ? <div className="hint">Готовим разбор…</div> : null}
+        {!loading && !text ? <div className="hint">Пока пусто.</div> : null}
+
+        {text ? <pre className="out">{text}</pre> : null}
+
+        <div className="row">
+          <button type="button" className="btn" onClick={fetchFromDb} disabled={loading}>
+            Обновить из БД
+          </button>
+          <button type="button" className="btn2" onClick={goBack}>
+            Назад
+          </button>
+        </div>
+
+        <div className="row">
+          <button type="button" className="btn3" onClick={forceAnalyze} disabled={loading}>
+            Пересоздать отчёт (OpenAI)
+          </button>
+        </div>
+
+        {ready ? (
+          <button type="button" className="share" onClick={openShare}>
+            Поделиться
+          </button>
+        ) : null}
       </section>
 
       <style jsx>{`
@@ -188,7 +453,7 @@ export default function ReportClient() {
 
         .hero {
           margin-top: 6px;
-          padding: 16px 14px 14px;
+          padding: 18px 14px 16px;
           border-radius: 22px;
           background: rgba(255, 255, 255, 0.04);
           border: 1px solid rgba(233, 236, 255, 0.12);
@@ -196,21 +461,26 @@ export default function ReportClient() {
           backdrop-filter: blur(16px) saturate(140%);
           -webkit-backdrop-filter: blur(16px) saturate(140%);
           text-align: center;
+          position: relative;
+          overflow: hidden;
         }
 
-        .t {
-          font-weight: 950;
-          font-size: 18px;
-          color: rgba(233, 236, 255, 0.94);
-          letter-spacing: -0.01em;
+        .title {
+          font-family: Montserrat, Manrope, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, 'Helvetica Neue', Arial;
+          font-weight: 900;
+          letter-spacing: 0.18em;
+          text-transform: uppercase;
+          font-size: 24px;
+          line-height: 1.05;
+          margin: 0 0 6px;
+          color: rgba(233, 236, 255, 0.92);
         }
 
-        .s {
-          margin-top: 6px;
+        .subtitle {
           font-size: 12px;
-          font-weight: 800;
-          color: rgba(233, 236, 255, 0.62);
-          overflow-wrap: anywhere;
+          color: rgba(233, 236, 255, 0.64);
+          letter-spacing: 0.14em;
+          text-transform: uppercase;
         }
 
         .card {
@@ -223,49 +493,119 @@ export default function ReportClient() {
           -webkit-backdrop-filter: blur(16px) saturate(140%);
           display: flex;
           flex-direction: column;
-          gap: 12px;
+          gap: 10px;
           overflow: hidden;
         }
 
-        .muted {
-          font-size: 13px;
+        .label {
+          font-size: 16px;
+          font-weight: 950;
+          color: var(--text);
+          letter-spacing: -0.01em;
+        }
+
+        .hint {
+          font-size: 12px;
           font-weight: 800;
           color: rgba(233, 236, 255, 0.62);
-          text-align: center;
-          padding: 10px 0;
+          padding-top: 6px;
+          overflow-wrap: anywhere;
         }
 
-        .err {
-          font-size: 13px;
-          font-weight: 900;
+        .warn {
+          font-size: 12px;
+          font-weight: 850;
           color: rgba(255, 180, 180, 0.95);
-          text-align: center;
-          padding: 10px 0;
+          overflow-wrap: anywhere;
         }
 
-        .txt {
-          white-space: pre-wrap;
-          line-height: 1.45;
-          font-size: 14px;
+        .meta {
+          font-size: 12px;
           font-weight: 800;
-          color: rgba(233, 236, 255, 0.9);
+          color: rgba(233, 236, 255, 0.7);
+          word-break: break-word;
         }
 
-        .back {
-          margin-top: 6px;
+        .metaLine + .metaLine {
+          margin-top: 4px;
+        }
+
+        .muted {
+          opacity: 0.7;
+        }
+
+        .out {
+          margin: 0;
+          padding: 12px;
+          border-radius: 16px;
+          border: 1px solid rgba(233, 236, 255, 0.1);
+          background: rgba(0, 0, 0, 0.25);
+          color: rgba(233, 236, 255, 0.92);
+          font-size: 13px;
+          line-height: 1.45;
+          white-space: pre-wrap;
+          word-break: break-word;
+        }
+
+        .row {
+          display: flex;
+          gap: 10px;
+          margin-top: 4px;
+        }
+
+        .btn,
+        .btn2,
+        .btn3 {
+          flex: 1;
           border-radius: 999px;
           padding: 12px 14px;
           font-size: 14px;
           font-weight: 950;
           cursor: pointer;
           -webkit-tap-highlight-color: transparent;
+        }
+
+        .btn {
+          border: 1px solid rgba(210, 179, 91, 0.35);
+          color: var(--text);
+          background: rgba(255, 255, 255, 0.04);
+          box-shadow: 0 14px 38px rgba(0, 0, 0, 0.45);
+        }
+
+        .btn:disabled {
+          opacity: 0.55;
+          cursor: not-allowed;
+          box-shadow: none;
+        }
+
+        .btn2 {
           border: 1px solid rgba(233, 236, 255, 0.14);
           color: rgba(233, 236, 255, 0.92);
           background: rgba(255, 255, 255, 0.03);
         }
 
-        .back:active {
-          transform: scale(0.99);
+        .btn3 {
+          border: 1px solid rgba(233, 236, 255, 0.14);
+          color: rgba(233, 236, 255, 0.92);
+          background: rgba(255, 255, 255, 0.02);
+        }
+
+        .share {
+          margin-top: 8px;
+          border: 1px solid rgba(210, 179, 91, 0.35);
+          border-radius: 999px;
+          padding: 12px 14px;
+          font-size: 14px;
+          font-weight: 950;
+          color: var(--text);
+          cursor: pointer;
+          background: rgba(255, 255, 255, 0.04);
+          box-shadow: 0 14px 38px rgba(0, 0, 0, 0.45);
+          -webkit-tap-highlight-color: transparent;
+        }
+
+        .share:active {
+          transform: scale(0.98);
           opacity: 0.92;
         }
       `}</style>
