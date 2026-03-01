@@ -27,11 +27,11 @@ export default function HomePage() {
     } catch {}
   }, []);
 
+  // ✅ убрали "Вердикт" полностью
   const actions: Action[] = [
     { title: 'Хиромант', subtitle: '2 фото → разбор линий и периодов', href: '/palm' },
     { title: 'Код судьбы', subtitle: 'Дата → ключевые числа и 12 месяцев', href: '/date-code' },
     { title: 'Карта неба', subtitle: 'Дата/время/город → звёздный портрет', href: '/birth-chart' },
-    { title: 'Вердикт', subtitle: 'Синтез → единая картина', href: '/synth' },
   ];
 
   const go = (href: string) => {
