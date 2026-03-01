@@ -37,13 +37,7 @@ function getInitDataNow(): string {
   return String(getCookie('tg_init_data') || '').trim();
 }
 
-type OptionKey =
-  | 'ASTRO_PERSON'
-  | 'ASTRO_LOVE'
-  | 'ASTRO_MONEY'
-  | 'ASTRO_CAREER'
-  | 'ASTRO_TIMING'
-  | 'ASTRO_FORMULA';
+type OptionKey = 'ASTRO_PERSON' | 'ASTRO_LOVE' | 'ASTRO_MONEY' | 'ASTRO_CAREER' | 'ASTRO_TIMING' | 'ASTRO_FORMULA';
 
 type Payload = {
   mode: 'ASTRO';
@@ -144,6 +138,30 @@ function openShare() {
   }
 }
 
+async function copyToClipboard(text: string): Promise<boolean> {
+  try {
+    if (!text) return false;
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', 'true');
+      ta.style.position = 'fixed';
+      ta.style.left = '-9999px';
+      ta.style.top = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      return ok;
+    } catch {
+      return false;
+    }
+  }
+}
+
 function storageKeyAstro(dob: string, place: string, time: string) {
   return `birth_chart_${dob}_${place}_${time}`.slice(0, 140);
 }
@@ -163,6 +181,9 @@ export default function ReportClient() {
   const [err, setErr] = useState<string>('');
   const [text, setText] = useState<string>('');
   const [info, setInfo] = useState<string>('');
+
+  const [toast, setToast] = useState<string>('');
+  const toastOn = Boolean(toast);
 
   const selectedForUi = payload?.selected ?? dbSelected;
 
@@ -192,9 +213,7 @@ export default function ReportClient() {
       const raw = sessionStorage.getItem(storageKeyAstro(dob, place, time));
       if (raw) {
         const j = JSON.parse(raw) as Payload;
-        if (j && j.mode === 'ASTRO' && j.dob === dob) {
-          setPayload(j);
-        }
+        if (j && j.mode === 'ASTRO' && j.dob === dob) setPayload(j);
       }
     } catch {}
 
@@ -202,6 +221,12 @@ export default function ReportClient() {
     fetchFromDb();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dob, place, time]);
+
+  useEffect(() => {
+    if (!toastOn) return;
+    const t = setTimeout(() => setToast(''), 1800);
+    return () => clearTimeout(t);
+  }, [toastOn]);
 
   const fetchFromDb = async () => {
     const initData = getInitDataNow();
@@ -350,6 +375,12 @@ export default function ReportClient() {
     window.location.href = '/birth-chart';
   };
 
+  const onCopy = async () => {
+    haptic('light');
+    const ok = await copyToClipboard(text || '');
+    setToast(ok ? 'Скопировано' : 'Не удалось скопировать');
+  };
+
   const showMeta = Boolean(dob || place || time || dbSelected || payload);
   const ready = Boolean(text) && !loading && !err;
 
@@ -359,6 +390,12 @@ export default function ReportClient() {
         <div className="title">РАЗБОР</div>
         <div className="subtitle">{ready ? 'ОТЧЁТ ГОТОВ' : loading ? 'ПРОХОДИТ АНАЛИЗ...' : 'ЗАГРУЗКА...'}</div>
       </header>
+
+      {toastOn ? (
+        <div className="toast" aria-live="polite">
+          {toast}
+        </div>
+      ) : null}
 
       {err ? (
         <section className="card">
@@ -415,6 +452,17 @@ export default function ReportClient() {
 
         {text ? <pre className="out">{text}</pre> : null}
 
+        {/* ✅ как palm/report */}
+        <div className="row">
+          <button type="button" className="btn2" onClick={onCopy} disabled={!ready}>
+            Скопировать
+          </button>
+          <button type="button" className="btn" onClick={openShare} disabled={!ready}>
+            Поделиться
+          </button>
+        </div>
+
+        {/* оставляем твои сервисные кнопки */}
         <div className="row">
           <button type="button" className="btn" onClick={fetchFromDb} disabled={loading}>
             Обновить из БД
@@ -429,12 +477,13 @@ export default function ReportClient() {
             Пересоздать отчёт (OpenAI)
           </button>
         </div>
+      </section>
 
-        {ready ? (
-          <button type="button" className="share" onClick={openShare}>
-            Поделиться
-          </button>
-        ) : null}
+      {/* ✅ отдельная нижняя кнопка “Назад” */}
+      <section className="bottom" aria-label="Назад">
+        <button type="button" className="backBtn" onClick={goBack}>
+          Назад
+        </button>
       </section>
 
       <style jsx>{`
@@ -481,6 +530,22 @@ export default function ReportClient() {
           color: rgba(233, 236, 255, 0.64);
           letter-spacing: 0.14em;
           text-transform: uppercase;
+        }
+
+        .toast {
+          width: 100%;
+          max-width: 520px;
+          padding: 10px 12px;
+          border-radius: 14px;
+          border: 1px solid rgba(233, 236, 255, 0.12);
+          background: rgba(12, 16, 32, 0.7);
+          color: rgba(233, 236, 255, 0.9);
+          font-size: 12px;
+          font-weight: 850;
+          text-align: center;
+          box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+          backdrop-filter: blur(12px);
+          -webkit-backdrop-filter: blur(12px);
         }
 
         .card {
@@ -572,7 +637,9 @@ export default function ReportClient() {
           box-shadow: 0 14px 38px rgba(0, 0, 0, 0.45);
         }
 
-        .btn:disabled {
+        .btn:disabled,
+        .btn2:disabled,
+        .btn3:disabled {
           opacity: 0.55;
           cursor: not-allowed;
           box-shadow: none;
@@ -590,22 +657,36 @@ export default function ReportClient() {
           background: rgba(255, 255, 255, 0.02);
         }
 
-        .share {
-          margin-top: 8px;
-          border: 1px solid rgba(210, 179, 91, 0.35);
-          border-radius: 999px;
-          padding: 12px 14px;
-          font-size: 14px;
-          font-weight: 950;
-          color: var(--text);
-          cursor: pointer;
-          background: rgba(255, 255, 255, 0.04);
-          box-shadow: 0 14px 38px rgba(0, 0, 0, 0.45);
-          -webkit-tap-highlight-color: transparent;
+        .btn:active,
+        .btn2:active,
+        .btn3:active {
+          transform: scale(0.99);
+          opacity: 0.92;
         }
 
-        .share:active {
-          transform: scale(0.98);
+        .bottom {
+          margin-top: 14px;
+        }
+
+        .backBtn {
+          width: 100%;
+          padding: 14px 14px;
+          border-radius: 18px;
+          border: 1px solid rgba(233, 236, 255, 0.14);
+          background: rgba(255, 255, 255, 0.03);
+          color: rgba(233, 236, 255, 0.92);
+          font-size: 14px;
+          font-weight: 900;
+          letter-spacing: 0.02em;
+          cursor: pointer;
+          -webkit-tap-highlight-color: transparent;
+          box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+          backdrop-filter: blur(16px);
+          -webkit-backdrop-filter: blur(16px);
+        }
+
+        .backBtn:active {
+          transform: scale(0.99);
           opacity: 0.92;
         }
       `}</style>
