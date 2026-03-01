@@ -29,9 +29,9 @@ export default function HomePage() {
 
   // ✅ убрали "Вердикт" полностью
   const actions: Action[] = [
-    { title: 'Хиромант', subtitle: '2 фото → разбор линий и периодов', href: '/palm' },
-    { title: 'Код судьбы', subtitle: 'Дата → ключевые числа и 12 месяцев', href: '/date-code' },
-    { title: 'Карта неба', subtitle: 'Дата/время/город → звёздный портрет', href: '/birth-chart' },
+    { title: 'Хиромант', subtitle: 'Линии на ладонях все скажут...', href: '/palm' },
+    { title: 'Код судьбы', subtitle: 'Числа и даты - ключ к судьбе', href: '/date-code' },
+    { title: 'Карта неба', subtitle: 'Звезды покажут куда двигаться', href: '/birth-chart' },
   ];
 
   const go = (href: string) => {
