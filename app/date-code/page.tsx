@@ -27,9 +27,9 @@ export default function DateCodePage() {
   }, []);
 
   const actions: Action[] = [
-    { title: 'Разбор даты рождения', subtitle: 'Базовый профиль + прогноз на год', href: '/date-code/date' },
-    { title: 'Дата + имя', subtitle: 'Комбо-разбор: деньги, карьера, коммуникация, энергия', href: '/date-code/combo' },
-    { title: 'Совместимость', subtitle: '2 даты + 2 имени: зоны пары, деньги/быт и правила', href: '/date-code/compat' },
+    { title: 'Разбор даты рождения', subtitle: 'Вся жизнь кроется в числах', href: '/date-code/date' },
+    { title: 'Дата + Имя', subtitle: 'Комбо-разбор: деньги, карьера, любовь...', href: '/date-code/combo' },
+    { title: 'Совместимость в числах', subtitle: 'Проверь совместимость с партнером', href: '/date-code/compat' },
   ];
 
   const go = (href: string) => {
