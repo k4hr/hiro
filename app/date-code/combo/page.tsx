@@ -38,8 +38,8 @@ function getInitDataNow(): string {
   return String(getCookie('tg_init_data') || '').trim();
 }
 
-const PRICE_RUB = 19;
-const SUMMARY_PRICE_RUB = 29;
+const PRICE_RUB = 39;
+const SUMMARY_PRICE_RUB = 49;
 
 type OptionKey =
   | 'COMBO_RESONANCE'
@@ -132,17 +132,15 @@ export default function DateCodeComboPage() {
   const options = useMemo(
     () =>
       [
-        { key: 'COMBO_RESONANCE' as const, title: 'Резонанс имени и жизненного пути', sub: 'насколько имя “попадает” в путь и как влияет', price: PRICE_RUB, fixed: false },
-        { key: 'COMBO_STRENGTHS' as const, title: 'Сильные стороны комбо', sub: 'что усилено именно вашей связкой', price: PRICE_RUB, fixed: false },
-        { key: 'COMBO_WEAKNESSES' as const, title: 'Слабые места комбо', sub: 'что может ломать стабильность и результат', price: PRICE_RUB, fixed: false },
-
-        { key: 'COMBO_MONEY' as const, title: 'Деньги и стратегия заработка', sub: 'лучшая модель денег + что режет доход', price: PRICE_RUB, fixed: false },
-        { key: 'COMBO_CAREER' as const, title: 'Карьера и формат работы', sub: 'где вы сильнее всего: соло/команда/управление', price: PRICE_RUB, fixed: false },
-        { key: 'COMBO_COMM' as const, title: 'Коммуникация и влияние', sub: 'как убеждать и какие ошибки общения мешают', price: PRICE_RUB, fixed: false },
-        { key: 'COMBO_ENERGY' as const, title: 'Энергия и режим', sub: 'что даёт ресурс, что выжигает, идеальный ритм', price: PRICE_RUB, fixed: false },
-        { key: 'COMBO_LESSON' as const, title: 'Главный урок комбо', sub: 'повторяющаяся тема роста + как закрывать действием', price: PRICE_RUB, fixed: false },
-
-        { key: 'SUMMARY' as const, title: 'Итог + общие советы', sub: 'сводка + 7 стратегических правил', price: SUMMARY_PRICE_RUB, fixed: true },
+        { key: 'COMBO_RESONANCE' as const, title: 'Резонанс имени и жизненного пути', sub: 'Насколько имя “попадает” в ваш путь', price: PRICE_RUB, fixed: false },
+        { key: 'COMBO_STRENGTHS' as const, title: 'Сильные стороны', sub: 'Что усилено именно вашей связкой', price: PRICE_RUB, fixed: false },
+        { key: 'COMBO_WEAKNESSES' as const, title: 'Слабые места', sub: 'Что может ломать стабильность и результат', price: PRICE_RUB, fixed: false },
+        { key: 'COMBO_MONEY' as const, title: 'Деньги и стратегия заработка', sub: 'Лучшая модель денег + что режет доход', price: PRICE_RUB, fixed: false },
+        { key: 'COMBO_CAREER' as const, title: 'Карьера и формат работы', sub: 'Где вы сильнее всего', price: PRICE_RUB, fixed: false },
+        { key: 'COMBO_COMM' as const, title: 'Коммуникация и влияние', sub: 'Как убеждать и какие ошибки общения', price: PRICE_RUB, fixed: false },
+        { key: 'COMBO_ENERGY' as const, title: 'Энергия и режим', sub: 'Что даёт ресурс, что выжигает, идеальный ритм', price: PRICE_RUB, fixed: false },
+        { key: 'COMBO_LESSON' as const, title: 'Главный урок', sub: 'Повторяющаяся тема роста + как закрывать действием', price: PRICE_RUB, fixed: false },
+        { key: 'SUMMARY' as const, title: 'Итог', sub: 'Сводка + 7 стратегических правил', price: SUMMARY_PRICE_RUB, fixed: true },
       ] as const,
     []
   );
@@ -307,7 +305,7 @@ export default function DateCodeComboPage() {
       {dobOk && nameOk ? (
         <section className="card" aria-label="Выбор пунктов">
           <div className="label">Что включить в разбор</div>
-          <div className="desc">Пункты по 19 ₽. Итог всегда включён и стоит 29 ₽.</div>
+          <div className="desc">Выберите необходимые пункты.</div>
 
           <div className="stack">
             {options.map((o) => {
