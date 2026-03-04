@@ -1,19 +1,27 @@
 /* path: lib/yookassa.ts */
 import crypto from 'crypto';
 
-function mustEnv(name: string): string {
-  const v = String(process.env[name] ?? '').trim();
-  if (!v) throw new Error(`Missing env: ${name}`);
-  return v;
+function envClean(name: string) {
+  return String(process.env[name] ?? '').replace(/[\r\n]/g, '').trim();
 }
 
-export const ykShopId = mustEnv('YOOKASSA_SHOP_ID');
-export const ykSecret = mustEnv('YOOKASSA_SECRET_KEY');
-export const ykReturnUrl = mustEnv('YOOKASSA_RETURN_URL');
+export type YookassaConfig = {
+  shopId: string;
+  secretKey: string;
+  returnUrl: string;
+};
 
-export function basicAuthHeader() {
-  // ЮKassa: Basic base64(shopId:secretKey)
-  const token = Buffer.from(`${ykShopId}:${ykSecret}`).toString('base64');
+export function getYookassaConfig(): YookassaConfig | null {
+  const shopId = envClean('YOOKASSA_SHOP_ID');
+  const secretKey = envClean('YOOKASSA_SECRET_KEY');
+  const returnUrl = envClean('YOOKASSA_RETURN_URL');
+
+  if (!shopId || !secretKey || !returnUrl) return null;
+  return { shopId, secretKey, returnUrl };
+}
+
+export function basicAuthHeader(cfg: YookassaConfig) {
+  const token = Buffer.from(`${cfg.shopId}:${cfg.secretKey}`).toString('base64');
   return `Basic ${token}`;
 }
 
