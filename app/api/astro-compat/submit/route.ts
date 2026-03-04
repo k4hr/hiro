@@ -105,6 +105,14 @@ function safeNum(v: any): number | null {
   return n;
 }
 
+function countPaid(selected: any): number {
+  const keys: OptionKey[] = ['ACOMPAT_LOVE', 'ACOMPAT_SEX', 'ACOMPAT_MONEY', 'ACOMPAT_CONFLICT', 'ACOMPAT_FAMILY'];
+  if (!selected || typeof selected !== 'object') return 0;
+  let c = 0;
+  for (const k of keys) if (selected[k] === true) c += 1;
+  return c;
+}
+
 export async function POST(req: Request) {
   try {
     const botToken = envClean('TELEGRAM_BOT_TOKEN');
@@ -134,9 +142,6 @@ export async function POST(req: Request) {
     const acc2 = safeNum(b?.accuracyLevel);
 
     const selected = body.selected && typeof body.selected === 'object' ? body.selected : {};
-    const totalRub = safeNum(body.totalRub);
-    const priceRub = safeNum(body.priceRub);
-    const summaryPriceRub = safeNum(body.summaryPriceRub);
 
     if (!initData) return NextResponse.json({ ok: false, error: 'NO_INIT_DATA' }, { status: 401 });
     if (!dob1 || !dob2) return NextResponse.json({ ok: false, error: 'NO_DOB' }, { status: 400 });
@@ -148,17 +153,11 @@ export async function POST(req: Request) {
     const v = verifyTelegramWebAppInitData(initData, botToken);
     if (!v.ok) return NextResponse.json({ ok: false, error: v.error }, { status: 401 });
 
-    const telegramId = v.user.id;
-
     const user = await prisma.user.upsert({
-      where: { telegramId },
-      update: {
-        username: v.user.username,
-        firstName: v.user.first_name,
-        lastName: v.user.last_name,
-      },
+      where: { telegramId: v.user.id },
+      update: { username: v.user.username, firstName: v.user.first_name, lastName: v.user.last_name },
       create: {
-        telegramId,
+        telegramId: v.user.id,
         username: v.user.username,
         firstName: v.user.first_name,
         lastName: v.user.last_name,
@@ -167,17 +166,34 @@ export async function POST(req: Request) {
       select: { id: true },
     });
 
+    // ✅ HARD-CODED PRICES
+    const modulePriceRub = 39;
+    const summaryPriceRub = 49;
+
     const selectedFixed: Record<string, any> = { ...(selected ?? {}), ACOMPAT_FORMULA: true };
+    const paidCount = countPaid(selectedFixed);
+    const totalRub = paidCount * modulePriceRub + summaryPriceRub;
 
     const inputJson = {
       mode: 'ASTRO_COMPAT',
       a: { dob: dob1, age: age1, birthPlace: place1, birthTime: time1, accuracyLevel: acc1 },
       b: { dob: dob2, age: age2, birthPlace: place2, birthTime: time2, accuracyLevel: acc2 },
       selected: selectedFixed,
-      totalRub,
-      priceRub,
-      summaryPriceRub,
+      clientPricing: {
+        totalRub: safeNum(body.totalRub),
+        priceRub: safeNum(body.priceRub),
+        summaryPriceRub: safeNum(body.summaryPriceRub),
+      },
       savedAt: new Date().toISOString(),
+    };
+
+    const pricingJson = {
+      kind: 'ASTRO_COMPAT',
+      modulePriceRub,
+      summaryPriceRub,
+      paidCount,
+      totalRub,
+      selected: selectedFixed,
     };
 
     const draft = await prisma.report.findFirst({
@@ -215,11 +231,15 @@ export async function POST(req: Request) {
           astroTime2: time2 || null,
           astroAccuracyLevel2: acc2 ?? null,
 
+          priceRub: modulePriceRub,
+          totalRub,
+          pricingJson,
+
           errorCode: null,
           errorText: null,
         },
       });
-      return NextResponse.json({ ok: true, reportId: draft.id });
+      return NextResponse.json({ ok: true, reportId: draft.id, totalRub });
     }
 
     const created = await prisma.report.create({
@@ -239,11 +259,15 @@ export async function POST(req: Request) {
         astroCity2: place2 || null,
         astroTime2: time2 || null,
         astroAccuracyLevel2: acc2 ?? null,
+
+        priceRub: modulePriceRub,
+        totalRub,
+        pricingJson,
       },
       select: { id: true },
     });
 
-    return NextResponse.json({ ok: true, reportId: created.id });
+    return NextResponse.json({ ok: true, reportId: created.id, totalRub });
   } catch (e: any) {
     console.error(e);
     return NextResponse.json({ ok: false, error: 'SUBMIT_FAILED', hint: String(e?.message || 'See server logs') }, { status: 500 });
