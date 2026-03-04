@@ -53,9 +53,7 @@ function verifyTelegramWebAppInitData(initData: string, botToken: string, maxAge
   const secretKey = crypto.createHmac('sha256', 'WebAppData').update(botToken).digest();
   const computedHash = crypto.createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
 
-  if (!timingSafeEqualHex(computedHash, hash)) {
-    return { ok: false as const, error: 'BAD_HASH' as const };
-  }
+  if (!timingSafeEqualHex(computedHash, hash)) return { ok: false as const, error: 'BAD_HASH' as const };
 
   const userStr = params.get('user');
   if (!userStr) return { ok: false as const, error: 'NO_USER' as const };
@@ -95,6 +93,13 @@ function parseDobToUtcDate(dob: string): Date | null {
   return dt;
 }
 
+function safeNum(v: any): number | null {
+  if (v === null || v === undefined) return null;
+  const n = Number(v);
+  if (!Number.isFinite(n)) return null;
+  return n;
+}
+
 export async function POST(req: Request) {
   try {
     const botToken = envClean('TELEGRAM_BOT_TOKEN');
@@ -106,11 +111,9 @@ export async function POST(req: Request) {
     const initData = String(body.initData || '').trim();
     const mode = String(body.mode || '').trim(); // DATE
     const dob = String(body.dob || '').trim();
-    const age = body.age ?? null;
-    const selected = body.selected ?? null;
-    const totalRub = body.totalRub ?? null;
-    const priceRub = body.priceRub ?? null;
-    const summaryPriceRub = body.summaryPriceRub ?? null;
+
+    const age = safeNum(body.age);
+    const selected = body.selected && typeof body.selected === 'object' ? body.selected : {};
 
     if (!initData) return NextResponse.json({ ok: false, error: 'NO_INIT_DATA' }, { status: 401 });
     if (mode !== 'DATE') return NextResponse.json({ ok: false, error: 'BAD_MODE' }, { status: 400 });
@@ -122,17 +125,11 @@ export async function POST(req: Request) {
     const v = verifyTelegramWebAppInitData(initData, botToken);
     if (!v.ok) return NextResponse.json({ ok: false, error: v.error }, { status: 401 });
 
-    const telegramId = v.user.id;
-
     const user = await prisma.user.upsert({
-      where: { telegramId },
-      update: {
-        username: v.user.username,
-        firstName: v.user.first_name,
-        lastName: v.user.last_name,
-      },
+      where: { telegramId: v.user.id },
+      update: { username: v.user.username, firstName: v.user.first_name, lastName: v.user.last_name },
       create: {
-        telegramId,
+        telegramId: v.user.id,
         username: v.user.username,
         firstName: v.user.first_name,
         lastName: v.user.last_name,
@@ -141,23 +138,34 @@ export async function POST(req: Request) {
       select: { id: true },
     });
 
-    // если есть DRAFT для этой даты — обновим, иначе создадим
-    const draft = await prisma.report.findFirst({
-      where: { userId: user.id, type: 'NUM', status: 'DRAFT', numMode: 'DATE', numDob1: dobDate },
-      orderBy: { createdAt: 'desc' },
-      select: { id: true },
-    });
+    // ✅ HARD-CODED PRICE FOR NUM DATE
+    const totalRub = 49;
+    const priceRub = 0;
 
     const inputJson = {
       mode: 'DATE',
       dob,
       age,
       selected,
-      totalRub,
-      priceRub,
-      summaryPriceRub,
+      clientPricing: {
+        totalRub: safeNum(body.totalRub),
+        priceRub: safeNum(body.priceRub),
+        summaryPriceRub: safeNum(body.summaryPriceRub),
+      },
       savedAt: new Date().toISOString(),
     };
+
+    const pricingJson = {
+      kind: 'NUM_DATE',
+      totalRub,
+      selected,
+    };
+
+    const draft = await prisma.report.findFirst({
+      where: { userId: user.id, type: 'NUM', status: 'DRAFT', numMode: 'DATE', numDob1: dobDate },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true },
+    });
 
     if (draft) {
       await prisma.report.update({
@@ -169,11 +177,16 @@ export async function POST(req: Request) {
           numName1: null,
           numDob2: null,
           numName2: null,
+
+          priceRub,
+          totalRub,
+          pricingJson,
+
           errorCode: null,
           errorText: null,
         },
       });
-      return NextResponse.json({ ok: true, reportId: draft.id });
+      return NextResponse.json({ ok: true, reportId: draft.id, totalRub });
     }
 
     const created = await prisma.report.create({
@@ -184,11 +197,15 @@ export async function POST(req: Request) {
         input: inputJson,
         numMode: 'DATE',
         numDob1: dobDate,
+
+        priceRub,
+        totalRub,
+        pricingJson,
       },
       select: { id: true },
     });
 
-    return NextResponse.json({ ok: true, reportId: created.id });
+    return NextResponse.json({ ok: true, reportId: created.id, totalRub });
   } catch (e: any) {
     console.error(e);
     return NextResponse.json({ ok: false, error: 'SUBMIT_FAILED', hint: String(e?.message || 'See server logs') }, { status: 500 });
