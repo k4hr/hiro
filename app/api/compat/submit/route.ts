@@ -90,6 +90,23 @@ function cleanName(v: any): string {
   return String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, 64);
 }
 
+function safeNum(v: any): number | null {
+  if (v === null || v === undefined) return null;
+  const n = Number(v);
+  if (!Number.isFinite(n)) return null;
+  return n;
+}
+
+function countSelectedTrue(selected: any): number {
+  if (!selected || typeof selected !== 'object') return 0;
+  let c = 0;
+  for (const [k, v] of Object.entries(selected)) {
+    if (k.toUpperCase().includes('FORMULA')) continue;
+    if (v === true) c += 1;
+  }
+  return c;
+}
+
 export async function POST(req: Request) {
   try {
     const botToken = envClean('TELEGRAM_BOT_TOKEN');
@@ -105,13 +122,10 @@ export async function POST(req: Request) {
     const name1 = cleanName(body.name1);
     const name2 = cleanName(body.name2);
 
-    const age1 = body.age1 ?? null;
-    const age2 = body.age2 ?? null;
+    const age1 = safeNum(body.age1);
+    const age2 = safeNum(body.age2);
 
-    const selected = (body.selected && typeof body.selected === 'object') ? body.selected : {};
-    const totalRub = body.totalRub ?? null;
-    const priceRub = body.priceRub ?? null;
-    const summaryPriceRub = body.summaryPriceRub ?? null;
+    const selected = body.selected && typeof body.selected === 'object' ? body.selected : {};
 
     if (!initData) return NextResponse.json({ ok: false, error: 'NO_INIT_DATA' }, { status: 401 });
     if (!dob1 || !dob2) return NextResponse.json({ ok: false, error: 'NO_DOB' }, { status: 400 });
@@ -124,17 +138,11 @@ export async function POST(req: Request) {
     const v = verifyTelegramWebAppInitData(initData, botToken);
     if (!v.ok) return NextResponse.json({ ok: false, error: v.error }, { status: 401 });
 
-    const telegramId = v.user.id;
-
     const user = await prisma.user.upsert({
-      where: { telegramId },
-      update: {
-        username: v.user.username,
-        firstName: v.user.first_name,
-        lastName: v.user.last_name,
-      },
+      where: { telegramId: v.user.id },
+      update: { username: v.user.username, firstName: v.user.first_name, lastName: v.user.last_name },
       create: {
-        telegramId,
+        telegramId: v.user.id,
         username: v.user.username,
         firstName: v.user.first_name,
         lastName: v.user.last_name,
@@ -143,8 +151,13 @@ export async function POST(req: Request) {
       select: { id: true },
     });
 
-    // ✅ железно фиксируем итог в saved selected
+    // ✅ HARD-CODED PRICES
+    const modulePriceRub = 39;
+    const summaryPriceRub = 49;
+
     const selectedFixed = { ...(selected ?? {}), COMPAT_FORMULA: true };
+    const paidCount = countSelectedTrue(selectedFixed);
+    const totalRub = paidCount * modulePriceRub + summaryPriceRub;
 
     const inputJson = {
       mode: 'COMPAT',
@@ -155,10 +168,21 @@ export async function POST(req: Request) {
       name2,
       age2,
       selected: selectedFixed,
-      totalRub,
-      priceRub,
-      summaryPriceRub,
+      clientPricing: {
+        totalRub: safeNum(body.totalRub),
+        priceRub: safeNum(body.priceRub),
+        summaryPriceRub: safeNum(body.summaryPriceRub),
+      },
       savedAt: new Date().toISOString(),
+    };
+
+    const pricingJson = {
+      kind: 'NUM_COMPAT',
+      modulePriceRub,
+      summaryPriceRub,
+      paidCount,
+      totalRub,
+      selected: selectedFixed,
     };
 
     const draft = await prisma.report.findFirst({
@@ -186,11 +210,16 @@ export async function POST(req: Request) {
           numName1: name1,
           numDob2: d2,
           numName2: name2,
+
+          priceRub: modulePriceRub,
+          totalRub,
+          pricingJson,
+
           errorCode: null,
           errorText: null,
         },
       });
-      return NextResponse.json({ ok: true, reportId: draft.id });
+      return NextResponse.json({ ok: true, reportId: draft.id, totalRub });
     }
 
     const created = await prisma.report.create({
@@ -204,11 +233,15 @@ export async function POST(req: Request) {
         numName1: name1,
         numDob2: d2,
         numName2: name2,
+
+        priceRub: modulePriceRub,
+        totalRub,
+        pricingJson,
       },
       select: { id: true },
     });
 
-    return NextResponse.json({ ok: true, reportId: created.id });
+    return NextResponse.json({ ok: true, reportId: created.id, totalRub });
   } catch (e: any) {
     console.error(e);
     return NextResponse.json({ ok: false, error: 'SUBMIT_FAILED', hint: String(e?.message || 'See server logs') }, { status: 500 });
