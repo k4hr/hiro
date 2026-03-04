@@ -178,6 +178,13 @@ model Report {
   input      Json?  @db.Json
   confidence Float?
 
+  // ✅ ЦЕНЫ / ОПЛАТА (истина для ЮKassa)
+  // priceRub — цена “модуля” (если применимо)
+  // totalRub — итог к оплате за этот report
+  priceRub   Int   @default(0)
+  totalRub   Int   @default(0)
+  pricingJson Json? @db.Json
+
   errorCode String?
   errorText String?
 
@@ -210,6 +217,9 @@ model Report {
 
   // быстрый поиск для совместимости (пара)
   @@index([userId, astroMode, astroDob, astroCity, astroTime, astroDob2, astroCity2, astroTime2])
+
+  // иногда полезно по аналитике/фильтрам
+  @@index([totalRub])
 }
 
 model ReportShare {
