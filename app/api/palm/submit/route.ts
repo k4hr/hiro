@@ -65,9 +65,7 @@ function verifyTelegramWebAppInitData(initData: string, botToken: string, maxAge
   const secretKey = crypto.createHmac('sha256', 'WebAppData').update(botToken).digest();
   const computedHash = crypto.createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
 
-  if (!timingSafeEqualHex(computedHash, hash)) {
-    return { ok: false as const, error: 'BAD_HASH' as const };
-  }
+  if (!timingSafeEqualHex(computedHash, hash)) return { ok: false as const, error: 'BAD_HASH' as const };
 
   const userStr = params.get('user');
   if (!userStr) return { ok: false as const, error: 'NO_USER' as const };
@@ -119,9 +117,6 @@ export async function POST(req: Request) {
     const selected = body.selected as Record<string, any> | undefined;
     const selectedList = pickSelected(selected);
 
-    const totalRub = Number(body.totalRub ?? 0);
-    const priceRub = Number(body.priceRub ?? 0);
-
     if (!initData) return NextResponse.json({ ok: false, error: 'NO_INIT_DATA' }, { status: 401 });
     if (!scanId) return NextResponse.json({ ok: false, error: 'NO_SCAN_ID' }, { status: 400 });
     if (!['RIGHT', 'LEFT', 'AMBI'].includes(handedness)) return NextResponse.json({ ok: false, error: 'BAD_HANDEDNESS' }, { status: 400 });
@@ -131,8 +126,7 @@ export async function POST(req: Request) {
     const v = verifyTelegramWebAppInitData(initData, botToken);
     if (!v.ok) return NextResponse.json({ ok: false, error: v.error }, { status: 401 });
 
-    const telegramId = v.user.id;
-    const user = await prisma.user.findUnique({ where: { telegramId }, select: { id: true } });
+    const user = await prisma.user.findUnique({ where: { telegramId: v.user.id }, select: { id: true } });
     if (!user) return NextResponse.json({ ok: false, error: 'NO_USER' }, { status: 404 });
 
     const scan = await prisma.palmScan.findUnique({
@@ -142,6 +136,11 @@ export async function POST(req: Request) {
     if (!scan) return NextResponse.json({ ok: false, error: 'NO_SCAN' }, { status: 404 });
     if (scan.userId !== user.id) return NextResponse.json({ ok: false, error: 'FORBIDDEN' }, { status: 403 });
 
+    // ✅ HARD-CODED PRICE
+    const modulePriceRub = 39;
+    const paidCount = selectedList.length;
+    const totalRub = paidCount * modulePriceRub;
+
     const inputJson = {
       scanId,
       handedness,
@@ -149,14 +148,28 @@ export async function POST(req: Request) {
       age,
       selected: selected ?? null,
       selectedList,
-      totalRub: Number.isFinite(totalRub) ? totalRub : null,
-      priceRub: Number.isFinite(priceRub) ? priceRub : null,
+      clientPricing: {
+        totalRub: Number.isFinite(Number(body.totalRub)) ? Number(body.totalRub) : null,
+        priceRub: Number.isFinite(Number(body.priceRub)) ? Number(body.priceRub) : null,
+      },
+      serverPricing: {
+        modulePriceRub,
+        paidCount,
+        totalRub,
+      },
       leftUrl: scan.leftImageUrl ?? null,
       rightUrl: scan.rightImageUrl ?? null,
       submittedAt: new Date().toISOString(),
     };
 
-    // Ищем существующий DRAFT report по этому scanId (чтобы не плодить)
+    const pricingJson = {
+      kind: 'PALM',
+      modulePriceRub,
+      paidCount,
+      totalRub,
+      selectedList,
+    };
+
     const existing = await prisma.report.findFirst({
       where: { userId: user.id, type: 'PALM', palmScanId: scanId, status: 'DRAFT' },
       orderBy: { createdAt: 'desc' },
@@ -166,7 +179,12 @@ export async function POST(req: Request) {
     const report = existing
       ? await prisma.report.update({
           where: { id: existing.id },
-          data: { input: inputJson },
+          data: {
+            input: inputJson,
+            priceRub: modulePriceRub,
+            totalRub,
+            pricingJson,
+          },
           select: { id: true },
         })
       : await prisma.report.create({
@@ -176,11 +194,15 @@ export async function POST(req: Request) {
             status: 'DRAFT',
             palmScanId: scanId,
             input: inputJson,
+
+            priceRub: modulePriceRub,
+            totalRub,
+            pricingJson,
           },
           select: { id: true },
         });
 
-    return NextResponse.json({ ok: true, scanId, reportId: report.id, selectedList });
+    return NextResponse.json({ ok: true, scanId, reportId: report.id, selectedList, totalRub });
   } catch (e: any) {
     console.error(e);
     return NextResponse.json({ ok: false, error: 'SUBMIT_FAILED', hint: String(e?.message || 'See server logs') }, { status: 500 });
