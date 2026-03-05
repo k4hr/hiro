@@ -129,6 +129,7 @@ export async function POST(req: Request) {
         status: true,
         text: true,
         input: true,
+        pricingJson: true, // ✅ нужно для paid
         errorCode: true,
         errorText: true,
         createdAt: true,
@@ -137,6 +138,10 @@ export async function POST(req: Request) {
 
     const text = (scan.aiText && scan.aiText.trim()) || (lastReport?.text && lastReport.text.trim()) || '';
     const input = lastReport?.input ?? null;
+
+    // ✅ paid = yookassa.status === 'succeeded'
+    const ykStatus = (lastReport?.pricingJson as any)?.yookassa?.status;
+    const paid = String(ykStatus || '').toLowerCase() === 'succeeded';
 
     return NextResponse.json({
       ok: true,
@@ -161,6 +166,7 @@ export async function POST(req: Request) {
         : null,
       text,
       hasText: Boolean(text),
+      paid, // ✅ вот оно
     });
   } catch (e: any) {
     console.error(e);
