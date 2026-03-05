@@ -1,7 +1,7 @@
 /* path: app/palm/report/ReportClient.tsx */
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 
 function tg(): any | null {
@@ -75,6 +75,9 @@ type ScanGetResp =
       report: DbReport | null;
       text: string;
       hasText: boolean;
+
+      // ✅ ДОБАВЛЕНО: признак, что оплата подтверждена
+      paid: boolean;
     }
   | { ok: false; error: string; hint?: string };
 
@@ -179,6 +182,8 @@ export default function ReportClient() {
   const [text, setText] = useState<string>('');
   const [info, setInfo] = useState<string>('');
 
+  const [paid, setPaid] = useState<boolean>(false);
+
   const [toast, setToast] = useState<string>('');
   const toastOn = Boolean(toast);
 
@@ -223,16 +228,41 @@ export default function ReportClient() {
     return () => clearTimeout(t);
   }, [toastOn]);
 
-  const fetchFromDb = async () => {
+  // чтобы не запускать analyze несколько раз
+  const analyzeStartedRef = useRef(false);
+
+  // polling оплаты
+  const pollRef = useRef<any>(null);
+  const stopPoll = () => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  };
+  const startPoll = () => {
+    if (pollRef.current) return;
+    pollRef.current = setInterval(() => {
+      fetchFromDb(true);
+    }, 2000);
+  };
+
+  useEffect(() => {
+    return () => stopPoll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const fetchFromDb = async (silent = false) => {
     const initData = getInitDataNow();
     if (!initData) {
-      setErr('NO_INIT_DATA');
+      if (!silent) setErr('NO_INIT_DATA');
       return;
     }
 
-    setInfo('');
-    setErr('');
-    setLoading(true);
+    if (!silent) {
+      setInfo('');
+      setErr('');
+      setLoading(true);
+    }
 
     try {
       const res = await fetch('/api/palm/get', {
@@ -244,8 +274,10 @@ export default function ReportClient() {
       const j = (await res.json().catch(() => null)) as ScanGetResp | null;
 
       if (!res.ok || !j || (j as any).ok !== true) {
-        setErr((j as any)?.error ? String((j as any).error) : `GET_FAILED(${res.status})`);
-        setLoading(false);
+        if (!silent) {
+          setErr((j as any)?.error ? String((j as any).error) : `GET_FAILED(${res.status})`);
+          setLoading(false);
+        }
         return;
       }
 
@@ -257,17 +289,44 @@ export default function ReportClient() {
       const selFromDb = rep?.input ? safeSelectedFromDb(rep.input) : null;
       if (selFromDb) setDbSelected(selFromDb);
 
+      const isPaid = Boolean(j.paid === true);
+      setPaid(isPaid);
+
       if (j.hasText && j.text) {
+        stopPoll();
         setText(String(j.text));
+        setInfo('');
         setLoading(false);
         return;
       }
 
-      setInfo('Отчёт ещё не создан. Сейчас запустим анализ.');
-      setLoading(false);
-
+      // текста нет
       const s = payload?.selected ?? selFromDb;
-      if (s) {
+
+      if (!isPaid) {
+        // ✅ пока оплата не подтверждена — НЕ анализируем
+        analyzeStartedRef.current = false;
+        setText('');
+        setInfo('Ожидаем подтверждение оплаты…');
+        startPoll();
+        setLoading(false);
+        return;
+      }
+
+      // оплата подтверждена, но текста нет => запускаем анализ 1 раз
+      stopPoll();
+
+      if (!s) {
+        setInfo('Данные для анализа не найдены.');
+        setLoading(false);
+        return;
+      }
+
+      if (!analyzeStartedRef.current) {
+        analyzeStartedRef.current = true;
+        setInfo('Оплата подтверждена. Запускаем анализ…');
+        setLoading(false);
+
         runAnalyze({
           scanId,
           handedness: (payload?.handedness ?? (rep?.input?.handedness as Handedness) ?? 'RIGHT') as Handedness,
@@ -275,10 +334,15 @@ export default function ReportClient() {
           age: payload?.age ?? (rep?.input?.age ?? null),
           selected: s,
         });
+        return;
       }
-    } catch (e: any) {
-      setErr(e?.message ? String(e.message) : 'NETWORK');
+
       setLoading(false);
+    } catch (e: any) {
+      if (!silent) {
+        setErr(e?.message ? String(e.message) : 'NETWORK');
+        setLoading(false);
+      }
     }
   };
 
@@ -290,7 +354,6 @@ export default function ReportClient() {
     }
 
     setErr('');
-    setInfo('');
     setText('');
     setLoading(true);
 
@@ -316,10 +379,11 @@ export default function ReportClient() {
       }
 
       setText(String(j.text));
+      setInfo('');
       setLoading(false);
 
-      // после анализа обновим БД-инфо (чтобы подтянуть reportId/status)
-      fetchFromDb();
+      // подтянем БД (report/status/text)
+      fetchFromDb(true);
     } catch (e: any) {
       setErr(e?.message ? String(e.message) : 'NETWORK');
       setLoading(false);
@@ -344,7 +408,9 @@ export default function ReportClient() {
     <main className="p">
       <header className="hero">
         <div className="title">РАЗБОР</div>
-        <div className="subtitle">{ready ? 'ОТЧЁТ ГОТОВ' : loading ? 'ПРОХОДИТ АНАЛИЗ...' : 'ЗАГРУЗКА...'}</div>
+        <div className="subtitle">
+          {ready ? 'ОТЧЁТ ГОТОВ' : loading ? 'ПРОХОДИТ АНАЛИЗ...' : paid ? 'ОЖИДАЕМ ОТЧЁТ...' : 'ОЖИДАЕМ ОПЛАТУ...'}
+        </div>
       </header>
 
       {toastOn ? (
@@ -358,7 +424,7 @@ export default function ReportClient() {
           <div className="label">Ошибка</div>
           <div className="warn">{err}</div>
           <div className="row">
-            <button type="button" className="btn" onClick={fetchFromDb} disabled={loading}>
+            <button type="button" className="btn" onClick={() => fetchFromDb(false)} disabled={loading}>
               Обновить
             </button>
             <button type="button" className="btn2" onClick={goBack}>
@@ -372,6 +438,9 @@ export default function ReportClient() {
         <section className="card">
           <div className="label">Статус</div>
           <div className="hint">{info}</div>
+          <div className="hint">
+            Оплата: <b>{paid ? 'подтверждена' : 'ожидается'}</b>
+          </div>
           {scanStatus ? (
             <div className="hint">
               PalmScan.status: <b>{scanStatus}</b>
@@ -423,7 +492,6 @@ export default function ReportClient() {
         </div>
       </section>
 
-      {/* ✅ кнопка “Назад” как на /date-code */}
       <section className="bottom" aria-label="Назад">
         <button type="button" className="backBtn" onClick={goBack}>
           Назад
@@ -599,7 +667,6 @@ export default function ReportClient() {
           opacity: 0.92;
         }
 
-        /* ✅ кнопка назад как /date-code */
         .bottom {
           margin-top: 14px;
         }
