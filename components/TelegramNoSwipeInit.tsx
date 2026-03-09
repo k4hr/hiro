@@ -15,7 +15,7 @@ export default function TelegramNoSwipeInit() {
     // На iOS в Telegram сверху есть реальный оверлей ("Закрыть", "..."),
     // поэтому маленькой прибавки недостаточно.
     // Держим минимальный безопасный отступ, чтобы верхний блок не налезал.
-    const IOS_MIN_SAFE_TOP = 56;
+    const IOS_MIN_SAFE_TOP = 68;
     const NON_IOS_EXTRA_TOP = 0;
 
     const setPxVar = (name: string, value: number) => {
