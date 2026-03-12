@@ -101,7 +101,7 @@ function countSelectedTrue(selected: any): number {
   if (!selected || typeof selected !== 'object') return 0;
   let c = 0;
   for (const [k, v] of Object.entries(selected)) {
-    if (k.toUpperCase().includes('FORMULA')) continue;
+    if (String(k).toUpperCase().includes('FORMULA')) continue;
     if (v === true) c += 1;
   }
   return c;
@@ -134,7 +134,11 @@ export async function POST(req: Request) {
 
     const user = await prisma.user.upsert({
       where: { telegramId: v.user.id },
-      update: { username: v.user.username, firstName: v.user.first_name, lastName: v.user.last_name },
+      update: {
+        username: v.user.username,
+        firstName: v.user.first_name,
+        lastName: v.user.last_name,
+      },
       create: {
         telegramId: v.user.id,
         username: v.user.username,
@@ -145,7 +149,6 @@ export async function POST(req: Request) {
       select: { id: true },
     });
 
-    // ✅ HARD-CODED PRICES
     const modulePriceRub = 39;
     const summaryPriceRub = 49;
 
@@ -176,7 +179,14 @@ export async function POST(req: Request) {
     };
 
     const draft = await prisma.report.findFirst({
-      where: { userId: user.id, type: 'NUM', status: 'DRAFT', numMode: 'COMBO', numDob1: dobDate, numName1: name },
+      where: {
+        userId: user.id,
+        type: 'NUM',
+        status: 'DRAFT',
+        numMode: 'COMBO',
+        numDob1: dobDate,
+        numName1: name,
+      },
       orderBy: { createdAt: 'desc' },
       select: { id: true },
     });
@@ -192,15 +202,14 @@ export async function POST(req: Request) {
           numName1: name,
           numDob2: null,
           numName2: null,
-
           priceRub: modulePriceRub,
           totalRub,
           pricingJson,
-
           errorCode: null,
           errorText: null,
         },
       });
+
       return NextResponse.json({ ok: true, reportId: draft.id, totalRub });
     }
 
@@ -213,7 +222,6 @@ export async function POST(req: Request) {
         numMode: 'COMBO',
         numDob1: dobDate,
         numName1: name,
-
         priceRub: modulePriceRub,
         totalRub,
         pricingJson,
