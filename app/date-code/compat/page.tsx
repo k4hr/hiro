@@ -18,7 +18,6 @@ function haptic(type: 'light' | 'medium' = 'light') {
   } catch {}
 }
 
-/* cookie helpers */
 function getCookie(name: string): string {
   try {
     const rows = document.cookie ? document.cookie.split('; ') : [];
@@ -266,13 +265,25 @@ export default function DateCodeCompatPage() {
       });
 
       const sJson = (await sRes.json().catch(() => null)) as any;
-      if (!sRes.ok || !sJson || sJson.ok !== true || typeof sJson.reportId !== 'string') {
+
+      if (!sRes.ok) {
         setSubmitting(false);
-        setSubmitErr(sJson?.error ? String(sJson.error) : `SUBMIT_FAILED(${sRes.status})`);
+        setSubmitErr(sJson?.error ? String(sJson.error) : `SUBMIT_HTTP_${sRes.status}`);
         return;
       }
 
-      const reportId = String(sJson.reportId);
+      if (!sJson || sJson.ok !== true) {
+        setSubmitting(false);
+        setSubmitErr(sJson?.error ? String(sJson.error) : 'SUBMIT_BAD_RESPONSE');
+        return;
+      }
+
+      const reportId = String(sJson?.reportId || '').trim();
+      if (!reportId) {
+        setSubmitting(false);
+        setSubmitErr(`SUBMIT_NO_REPORT_ID: ${JSON.stringify(sJson)}`);
+        return;
+      }
 
       const returnPath =
         `/date-code/compat/report?dob1=${encodeURIComponent(payload.dob1)}` +
