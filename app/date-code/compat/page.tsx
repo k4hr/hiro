@@ -115,21 +115,21 @@ export default function DateCodeCompatPage() {
     } catch {}
   }, []);
 
-  // YOU
   const [dd1, setDd1] = useState('');
   const [mm1, setMm1] = useState('');
   const [yyyy1, setYyyy1] = useState('');
   const [name1, setName1] = useState('');
 
-  // PARTNER
   const [dd2, setDd2] = useState('');
   const [mm2, setMm2] = useState('');
   const [yyyy2, setYyyy2] = useState('');
   const [name2, setName2] = useState('');
 
+  const [submitErr, setSubmitErr] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
   const mm1Ref = useRef<HTMLInputElement | null>(null);
   const yyyy1Ref = useRef<HTMLInputElement | null>(null);
-
   const mm2Ref = useRef<HTMLInputElement | null>(null);
   const yyyy2Ref = useRef<HTMLInputElement | null>(null);
 
@@ -168,7 +168,7 @@ export default function DateCodeCompatPage() {
     COMPAT_BAD: true,
     COMPAT_TALKS: true,
     COMPAT_MONEY_HOME: true,
-    COMPAT_FORMULA: true, // фикс
+    COMPAT_FORMULA: true,
   });
 
   const toggleOption = (k: OptionKey) => {
@@ -183,19 +183,20 @@ export default function DateCodeCompatPage() {
   }, [selected]);
 
   const totalRub = useMemo(() => paidCount * PRICE_RUB + SUMMARY_PRICE_RUB, [paidCount]);
-
-  const submitDisabled = !baseOk;
+  const submitDisabled = !baseOk || submitting;
 
   const onDay1Change = (v: string) => {
     const clean = v.replace(/\D/g, '').slice(0, 2);
     setDd1(clean);
     if (clean.length === 2) mm1Ref.current?.focus();
   };
+
   const onMonth1Change = (v: string) => {
     const clean = v.replace(/\D/g, '').slice(0, 2);
     setMm1(clean);
     if (clean.length === 2) yyyy1Ref.current?.focus();
   };
+
   const onYear1Change = (v: string) => setYyyy1(v.replace(/\D/g, '').slice(0, 4));
 
   const onDay2Change = (v: string) => {
@@ -203,16 +204,27 @@ export default function DateCodeCompatPage() {
     setDd2(clean);
     if (clean.length === 2) mm2Ref.current?.focus();
   };
+
   const onMonth2Change = (v: string) => {
     const clean = v.replace(/\D/g, '').slice(0, 2);
     setMm2(clean);
     if (clean.length === 2) yyyy2Ref.current?.focus();
   };
+
   const onYear2Change = (v: string) => setYyyy2(v.replace(/\D/g, '').slice(0, 4));
 
   const onSubmit = async () => {
     haptic('medium');
-    if (!baseOk) return;
+    if (!baseOk || submitting) return;
+
+    const initData = getInitDataNow();
+    if (!initData) {
+      setSubmitErr('NO_INIT_DATA');
+      return;
+    }
+
+    setSubmitting(true);
+    setSubmitErr('');
 
     const payload = {
       mode: 'COMPAT' as const,
@@ -235,33 +247,68 @@ export default function DateCodeCompatPage() {
     } catch {}
 
     try {
-      const initData = getInitDataNow();
-      if (initData) {
-        await fetch('/api/compat/submit', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            initData,
-            dob1: payload.dob1,
-            name1: payload.name1,
-            age1: payload.age1,
-            dob2: payload.dob2,
-            name2: payload.name2,
-            age2: payload.age2,
-            selected: payload.selected,
-            totalRub: payload.totalRub,
-            priceRub: payload.priceRub,
-            summaryPriceRub: payload.summaryPriceRub,
-          }),
-        });
-      }
-    } catch {}
+      const sRes = await fetch('/api/compat/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          initData,
+          dob1: payload.dob1,
+          name1: payload.name1,
+          age1: payload.age1,
+          dob2: payload.dob2,
+          name2: payload.name2,
+          age2: payload.age2,
+          selected: payload.selected,
+          totalRub: payload.totalRub,
+          priceRub: payload.priceRub,
+          summaryPriceRub: payload.summaryPriceRub,
+        }),
+      });
 
-    router.push(
-      `/date-code/compat/report?dob1=${encodeURIComponent(payload.dob1)}&name1=${encodeURIComponent(payload.name1)}&dob2=${encodeURIComponent(
-        payload.dob2
-      )}&name2=${encodeURIComponent(payload.name2)}`
-    );
+      const sJson = (await sRes.json().catch(() => null)) as any;
+      if (!sRes.ok || !sJson || sJson.ok !== true || typeof sJson.reportId !== 'string') {
+        setSubmitting(false);
+        setSubmitErr(sJson?.error ? String(sJson.error) : `SUBMIT_FAILED(${sRes.status})`);
+        return;
+      }
+
+      const reportId = String(sJson.reportId);
+
+      const returnPath =
+        `/date-code/compat/report?dob1=${encodeURIComponent(payload.dob1)}` +
+        `&name1=${encodeURIComponent(payload.name1)}` +
+        `&dob2=${encodeURIComponent(payload.dob2)}` +
+        `&name2=${encodeURIComponent(payload.name2)}` +
+        `&reportId=${encodeURIComponent(reportId)}`;
+
+      const pRes = await fetch('/api/yookassa/create-payment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          reportId,
+          description: 'Код судьбы · совместимость',
+          returnPath,
+        }),
+      });
+
+      const pJson = (await pRes.json().catch(() => null)) as any;
+      const confirmationUrl = String(pJson?.confirmationUrl ?? '');
+
+      if (!pRes.ok || !pJson || pJson.ok !== true || !confirmationUrl) {
+        setSubmitting(false);
+        setSubmitErr(pJson?.error ? String(pJson.error) : `PAYMENT_CREATE_FAILED(${pRes.status})`);
+        return;
+      }
+
+      try {
+        tg()?.openLink?.(confirmationUrl);
+      } catch {
+        window.location.href = confirmationUrl;
+      }
+    } catch (e: any) {
+      setSubmitting(false);
+      setSubmitErr(e?.message ? String(e.message) : 'NETWORK_ERROR');
+    }
   };
 
   const goBack = () => {
@@ -275,6 +322,13 @@ export default function DateCodeCompatPage() {
         <div className="title">КОД СУДЬБЫ</div>
         <div className="subtitle">совместимость</div>
       </header>
+
+      {submitErr ? (
+        <section className="card" aria-label="Ошибка">
+          <div className="label">Ошибка</div>
+          <div className="warn">{submitErr}</div>
+        </section>
+      ) : null}
 
       <section className="card" aria-label="Ваши данные">
         <div className="label center">Ваши данные</div>
@@ -357,7 +411,7 @@ export default function DateCodeCompatPage() {
                   type="button"
                   className={`opt ${on ? 'opt--on' : ''} ${isFixed ? 'opt--fixed' : ''}`}
                   onClick={() => toggleOption(o.key)}
-                  disabled={isFixed}
+                  disabled={isFixed || submitting}
                 >
                   <div className="optText">
                     <div className="optT">{o.title}</div>
@@ -382,10 +436,10 @@ export default function DateCodeCompatPage() {
           </div>
 
           <button type="button" className={`send ${submitDisabled ? 'send--off' : ''}`} disabled={submitDisabled} onClick={onSubmit}>
-            Продолжить
+            {submitting ? 'Открываю оплату…' : 'Продолжить'}
           </button>
 
-          <button type="button" className="back" onClick={goBack}>
+          <button type="button" className="back" onClick={goBack} disabled={submitting}>
             Назад
           </button>
         </section>
