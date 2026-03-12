@@ -1,7 +1,7 @@
 /* path: app/date-code/date/report/ReportClient.tsx */
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 
 function tg(): any | null {
@@ -18,7 +18,7 @@ function haptic(type: 'light' | 'medium' = 'light') {
   } catch {}
 }
 
-function getCookie(name: string): string {
+function getCookie(name: string) {
   try {
     const rows = document.cookie ? document.cookie.split('; ') : [];
     for (const row of rows) {
@@ -41,7 +41,7 @@ type OptionKey = 'LIFE_PATH' | 'BIRTHDAY' | 'DIGITS' | 'PERIODS' | 'YEAR12' | 'S
 
 type Payload = {
   mode: 'DATE';
-  dob: string; // dd.mm.yyyy
+  dob: string;
   age: number | null;
   selected: Record<OptionKey, boolean>;
   totalRub: number;
@@ -65,6 +65,7 @@ type GetResp =
       report: DbReport | null;
       text: string;
       hasText: boolean;
+      paid: boolean;
     }
   | { ok: false; error: string; hint?: string };
 
@@ -75,7 +76,6 @@ function safeSelectedFromDb(input: any): Record<OptionKey, boolean> | null {
     const keys: OptionKey[] = ['LIFE_PATH', 'BIRTHDAY', 'DIGITS', 'PERIODS', 'YEAR12', 'SUMMARY'];
     const out: any = {};
     for (const k of keys) out[k] = sel[k] === true;
-    // SUMMARY всегда true
     out.SUMMARY = true;
     return out as Record<OptionKey, boolean>;
   } catch {
@@ -169,11 +169,12 @@ export default function ReportClient() {
   const [dbSelected, setDbSelected] = useState<Record<OptionKey, boolean> | null>(null);
 
   const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState<string>('');
-  const [text, setText] = useState<string>('');
-  const [info, setInfo] = useState<string>('');
+  const [err, setErr] = useState('');
+  const [text, setText] = useState('');
+  const [info, setInfo] = useState('');
+  const [paid, setPaid] = useState(false);
 
-  const [toast, setToast] = useState<string>('');
+  const [toast, setToast] = useState('');
   const toastOn = Boolean(toast);
 
   const selectedForUi = payload?.selected ?? dbSelected;
@@ -185,6 +186,23 @@ export default function ReportClient() {
       .filter(([, v]) => v)
       .map(([k]) => optionTitle(k));
   }, [selectedForUi]);
+
+  const analyzeStartedRef = useRef(false);
+  const pollRef = useRef<any>(null);
+
+  const stopPoll = () => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  };
+
+  const startPoll = () => {
+    if (pollRef.current) return;
+    pollRef.current = setInterval(() => {
+      fetchFromDb(true);
+    }, 2000);
+  };
 
   useEffect(() => {
     try {
@@ -199,7 +217,6 @@ export default function ReportClient() {
       return;
     }
 
-    // 1) payload из sessionStorage (первый заход)
     try {
       const raw = sessionStorage.getItem(`date_code_date_${dob}`);
       if (raw) {
@@ -208,8 +225,9 @@ export default function ReportClient() {
       }
     } catch {}
 
-    // 2) всегда тянем из БД
-    fetchFromDb();
+    fetchFromDb(false);
+
+    return () => stopPoll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dob]);
 
@@ -219,16 +237,18 @@ export default function ReportClient() {
     return () => clearTimeout(t);
   }, [toastOn]);
 
-  const fetchFromDb = async () => {
+  const fetchFromDb = async (silent = false) => {
     const initData = getInitDataNow();
     if (!initData) {
-      setErr('NO_INIT_DATA');
+      if (!silent) setErr('NO_INIT_DATA');
       return;
     }
 
-    setInfo('');
-    setErr('');
-    setLoading(true);
+    if (!silent) {
+      setInfo('');
+      setErr('');
+      setLoading(true);
+    }
 
     try {
       const res = await fetch('/api/num/get', {
@@ -240,35 +260,69 @@ export default function ReportClient() {
       const j = (await res.json().catch(() => null)) as GetResp | null;
 
       if (!res.ok || !j || (j as any).ok !== true) {
-        setErr((j as any)?.error ? String((j as any).error) : `GET_FAILED(${res.status})`);
-        setLoading(false);
+        if (!silent) {
+          setErr((j as any)?.error ? String((j as any).error) : `GET_FAILED(${res.status})`);
+          setLoading(false);
+        }
         return;
       }
 
-      const rep = (j as any).report ?? null;
+      const rep = j.report ?? null;
       setDbReport(rep);
 
       const selFromDb = rep?.input ? safeSelectedFromDb(rep.input) : null;
       if (selFromDb) setDbSelected(selFromDb);
 
-      if ((j as any).hasText && (j as any).text) {
-        setText(String((j as any).text));
+      const isPaid = Boolean(j.paid === true);
+      setPaid(isPaid);
+
+      if (j.hasText && j.text) {
+        stopPoll();
+        setText(String(j.text));
+        setInfo('');
         setLoading(false);
         return;
       }
 
-      setInfo('Отчёт ещё не создан. Сейчас запустим анализ.');
-      setLoading(false);
-
-      const s = payload?.selected ?? selFromDb;
+      const selectedNow = payload?.selected ?? selFromDb;
       const age = payload?.age ?? (rep?.input?.age ?? null);
 
-      if (s) {
-        runAnalyze({ dob, age, selected: s });
+      if (!isPaid) {
+        analyzeStartedRef.current = false;
+        setText('');
+        setInfo('Ожидаем подтверждение оплаты…');
+        startPoll();
+        setLoading(false);
+        return;
       }
-    } catch (e: any) {
-      setErr(e?.message ? String(e.message) : 'NETWORK');
+
+      stopPoll();
+
+      if (!selectedNow) {
+        setInfo('Данные для анализа не найдены.');
+        setLoading(false);
+        return;
+      }
+
+      if (!analyzeStartedRef.current) {
+        analyzeStartedRef.current = true;
+        setInfo('Оплата подтверждена. Запускаем анализ…');
+        setLoading(false);
+
+        runAnalyze({
+          dob,
+          age,
+          selected: selectedNow,
+        });
+        return;
+      }
+
       setLoading(false);
+    } catch (e: any) {
+      if (!silent) {
+        setErr(e?.message ? String(e.message) : 'NETWORK');
+        setLoading(false);
+      }
     }
   };
 
@@ -305,7 +359,10 @@ export default function ReportClient() {
       }
 
       setText(String(j.text));
+      setInfo('');
       setLoading(false);
+
+      fetchFromDb(true);
     } catch (e: any) {
       setErr(e?.message ? String(e.message) : 'NETWORK');
       setLoading(false);
@@ -317,7 +374,6 @@ export default function ReportClient() {
 
     const sel = payload?.selected ?? dbSelected;
     const repInput = dbReport?.input ?? null;
-
     const age = payload?.age ?? (repInput?.age ?? null);
 
     if (!dob) {
@@ -329,7 +385,13 @@ export default function ReportClient() {
       setInfo('Нет сохранённых пунктов. Вернись назад и нажми “Продолжить” ещё раз.');
       return;
     }
+    if (!paid) {
+      setErr('PAYMENT_NOT_CONFIRMED');
+      setInfo('Сначала должна подтвердиться оплата.');
+      return;
+    }
 
+    analyzeStartedRef.current = true;
     runAnalyze({ dob, age, selected: sel });
   };
 
@@ -355,7 +417,7 @@ export default function ReportClient() {
     <main className="p">
       <header className="hero">
         <div className="title">РАЗБОР</div>
-        <div className="subtitle">{ready ? 'ОТЧЁТ ГОТОВ' : loading ? 'ПРОХОДИТ АНАЛИЗ...' : 'ЗАГРУЗКА...'}</div>
+        <div className="subtitle">{ready ? 'ОТЧЁТ ГОТОВ' : loading ? 'ПРОХОДИТ АНАЛИЗ...' : paid ? 'ОЖИДАЕМ ОТЧЁТ...' : 'ОЖИДАЕМ ОПЛАТУ...'}</div>
       </header>
 
       {toastOn ? (
@@ -369,7 +431,7 @@ export default function ReportClient() {
           <div className="label">Ошибка</div>
           <div className="warn">{err}</div>
           <div className="row">
-            <button type="button" className="btn" onClick={fetchFromDb} disabled={loading}>
+            <button type="button" className="btn" onClick={() => fetchFromDb(false)} disabled={loading}>
               Обновить
             </button>
             <button type="button" className="btn2" onClick={goBack}>
@@ -383,6 +445,9 @@ export default function ReportClient() {
         <section className="card">
           <div className="label">Статус</div>
           <div className="hint">{info}</div>
+          <div className="hint">
+            Оплата: <b>{paid ? 'подтверждена' : 'ожидается'}</b>
+          </div>
         </section>
       ) : null}
 
@@ -413,7 +478,6 @@ export default function ReportClient() {
 
         {text ? <pre className="out">{text}</pre> : null}
 
-        {/* ✅ как в palm/report */}
         <div className="row">
           <button type="button" className="btn2" onClick={onCopy} disabled={!ready}>
             Скопировать
@@ -423,9 +487,8 @@ export default function ReportClient() {
           </button>
         </div>
 
-        {/* оставляем твои сервисные кнопки */}
         <div className="row">
-          <button type="button" className="btn" onClick={fetchFromDb} disabled={loading}>
+          <button type="button" className="btn" onClick={() => fetchFromDb(false)} disabled={loading}>
             Обновить из БД
           </button>
           <button type="button" className="btn2" onClick={goBack}>
@@ -440,7 +503,6 @@ export default function ReportClient() {
         </div>
       </section>
 
-      {/* ✅ отдельная нижняя кнопка “Назад” */}
       <section className="bottom" aria-label="Назад">
         <button type="button" className="backBtn" onClick={goBack}>
           Назад
