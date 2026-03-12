@@ -104,6 +104,8 @@ export default function DateCodeDatePage() {
   const [dd, setDd] = useState('');
   const [mm, setMm] = useState('');
   const [yyyy, setYyyy] = useState('');
+  const [submitErr, setSubmitErr] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   const mmRef = useRef<HTMLInputElement | null>(null);
   const yyyyRef = useRef<HTMLInputElement | null>(null);
@@ -131,7 +133,7 @@ export default function DateCodeDatePage() {
     DIGITS: true,
     PERIODS: true,
     YEAR12: true,
-    SUMMARY: true, // фикс
+    SUMMARY: true,
   });
 
   const toggleOption = (k: OptionKey) => {
@@ -140,16 +142,13 @@ export default function DateCodeDatePage() {
     setSelected((prev) => ({ ...prev, [k]: !prev[k] }));
   };
 
-  const selectedCountPaid19 = useMemo(() => {
+  const selectedCountPaid = useMemo(() => {
     const keys: OptionKey[] = ['LIFE_PATH', 'BIRTHDAY', 'DIGITS', 'PERIODS', 'YEAR12'];
     return keys.filter((k) => selected[k] === true).length;
   }, [selected]);
 
-  const totalRub = useMemo(() => {
-    return selectedCountPaid19 * PRICE_RUB + SUMMARY_PRICE_RUB;
-  }, [selectedCountPaid19]);
-
-  const submitDisabled = !dobOk;
+  const totalRub = useMemo(() => selectedCountPaid * PRICE_RUB + SUMMARY_PRICE_RUB, [selectedCountPaid]);
+  const submitDisabled = !dobOk || submitting;
 
   const onDayChange = (v: string) => {
     const clean = v.replace(/\D/g, '').slice(0, 2);
@@ -170,13 +169,22 @@ export default function DateCodeDatePage() {
 
   const onSubmit = async () => {
     haptic('medium');
-    if (!dobOk) return;
+    if (!dobOk || submitting) return;
+
+    const initData = getInitDataNow();
+    if (!initData) {
+      setSubmitErr('NO_INIT_DATA');
+      return;
+    }
+
+    setSubmitting(true);
+    setSubmitErr('');
 
     const payload = {
       mode: 'DATE' as const,
       dob: dobStr,
       age,
-      selected: { ...selected, SUMMARY: true }, // железно
+      selected: { ...selected, SUMMARY: true },
       totalRub,
       priceRub: PRICE_RUB,
       summaryPriceRub: SUMMARY_PRICE_RUB,
@@ -187,30 +195,63 @@ export default function DateCodeDatePage() {
       sessionStorage.setItem(`date_code_date_${dobStr}`, JSON.stringify(payload));
     } catch {}
 
-    // ✅ Сохраняем выбор в БД, чтобы отчёт открывался потом
     try {
-      const initData = getInitDataNow();
-      if (initData) {
-        await fetch('/api/num/submit', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            initData,
-            mode: 'DATE',
-            dob: payload.dob,
-            age: payload.age,
-            selected: payload.selected,
-            totalRub: payload.totalRub,
-            priceRub: payload.priceRub,
-            summaryPriceRub: payload.summaryPriceRub,
-          }),
-        });
-      }
-    } catch {
-      // UX не ломаем
-    }
+      // 1) submit -> reportId
+      const sRes = await fetch('/api/num/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          initData,
+          mode: 'DATE',
+          dob: payload.dob,
+          age: payload.age,
+          selected: payload.selected,
+          totalRub: payload.totalRub,
+          priceRub: payload.priceRub,
+          summaryPriceRub: payload.summaryPriceRub,
+        }),
+      });
 
-    router.push(`/date-code/date/report?dob=${encodeURIComponent(dobStr)}`);
+      const sJson = (await sRes.json().catch(() => null)) as any;
+      if (!sRes.ok || !sJson || sJson.ok !== true || typeof sJson.reportId !== 'string') {
+        setSubmitting(false);
+        setSubmitErr(sJson?.error ? String(sJson.error) : `SUBMIT_FAILED(${sRes.status})`);
+        return;
+      }
+
+      const reportId = String(sJson.reportId);
+
+      // 2) create payment
+      const returnPath = `/date-code/date/report?dob=${encodeURIComponent(dobStr)}&reportId=${encodeURIComponent(reportId)}`;
+
+      const pRes = await fetch('/api/yookassa/create-payment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          reportId,
+          description: 'Код судьбы · разбор даты рождения',
+          returnPath,
+        }),
+      });
+
+      const pJson = (await pRes.json().catch(() => null)) as any;
+      const confirmationUrl = String(pJson?.confirmationUrl ?? '');
+
+      if (!pRes.ok || !pJson || pJson.ok !== true || !confirmationUrl) {
+        setSubmitting(false);
+        setSubmitErr(pJson?.error ? String(pJson.error) : `PAYMENT_CREATE_FAILED(${pRes.status})`);
+        return;
+      }
+
+      try {
+        tg()?.openLink?.(confirmationUrl);
+      } catch {
+        window.location.href = confirmationUrl;
+      }
+    } catch (e: any) {
+      setSubmitting(false);
+      setSubmitErr(e?.message ? String(e.message) : 'NETWORK_ERROR');
+    }
   };
 
   const goBack = () => {
@@ -224,6 +265,13 @@ export default function DateCodeDatePage() {
         <div className="title">КОД СУДЬБЫ</div>
         <div className="subtitle">разбор даты рождения</div>
       </header>
+
+      {submitErr ? (
+        <section className="card" aria-label="Ошибка">
+          <div className="label">Ошибка</div>
+          <div className="warn">{submitErr}</div>
+        </section>
+      ) : null}
 
       <section className="card" aria-label="Дата рождения">
         <div className="label center">Дата рождения</div>
@@ -269,7 +317,7 @@ export default function DateCodeDatePage() {
                   type="button"
                   className={`opt ${on ? 'opt--on' : ''} ${isFixed ? 'opt--fixed' : ''}`}
                   onClick={() => toggleOption(o.key)}
-                  disabled={isFixed}
+                  disabled={isFixed || submitting}
                 >
                   <div className="optText">
                     <div className="optT">{o.title}</div>
@@ -293,17 +341,17 @@ export default function DateCodeDatePage() {
             <div className="totalL">
               <div className="totalT">Итого</div>
               <div className="totalS">
-                Пункты: <b>{selectedCountPaid19}</b> × {PRICE_RUB} ₽ + Итог {SUMMARY_PRICE_RUB} ₽
+                Пункты: <b>{selectedCountPaid}</b> × {PRICE_RUB} ₽ + Итог {SUMMARY_PRICE_RUB} ₽
               </div>
             </div>
             <div className="totalR">{totalRub} ₽</div>
           </div>
 
           <button type="button" className={`send ${submitDisabled ? 'send--off' : ''}`} disabled={submitDisabled} onClick={onSubmit}>
-            Продолжить
+            {submitting ? 'Открываю оплату…' : 'Продолжить'}
           </button>
 
-          <button type="button" className="back" onClick={goBack}>
+          <button type="button" className="back" onClick={goBack} disabled={submitting}>
             Назад
           </button>
         </section>
