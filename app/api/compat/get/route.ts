@@ -120,12 +120,31 @@ export async function POST(req: Request) {
     if (!user) return NextResponse.json({ ok: false, error: 'NO_USER' }, { status: 404 });
 
     const last = await prisma.report.findFirst({
-      where: { userId: user.id, type: 'NUM', numMode: 'COMPAT', numDob1: d1, numDob2: d2, numName1: name1, numName2: name2 },
+      where: {
+        userId: user.id,
+        type: 'NUM',
+        numMode: 'COMPAT',
+        numDob1: d1,
+        numDob2: d2,
+        numName1: name1,
+        numName2: name2,
+      },
       orderBy: { createdAt: 'desc' },
-      select: { id: true, status: true, createdAt: true, errorCode: true, errorText: true, input: true, text: true },
+      select: {
+        id: true,
+        status: true,
+        createdAt: true,
+        errorCode: true,
+        errorText: true,
+        input: true,
+        text: true,
+        pricingJson: true,
+      },
     });
 
     const hasText = Boolean(last?.status === 'READY' && last?.text);
+    const ykStatus = (last?.pricingJson as any)?.yookassa?.status;
+    const paid = String(ykStatus || '').toLowerCase() === 'succeeded';
 
     return NextResponse.json({
       ok: true,
@@ -141,6 +160,7 @@ export async function POST(req: Request) {
         : null,
       text: hasText ? String(last!.text) : '',
       hasText,
+      paid,
     });
   } catch (e: any) {
     console.error(e);
