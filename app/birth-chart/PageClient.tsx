@@ -1,4 +1,4 @@
-/* path: app/birth-chart/PageClient.tsx */
+/* path:  app/birth-chart/PageClient.tsx */
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
