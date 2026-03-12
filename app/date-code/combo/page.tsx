@@ -1,8 +1,8 @@
-/* path: app/date-code/combo/page.tsx */
+/* path: app/date-code/combo/report/ReportClient.tsx */
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 
 function tg(): any | null {
   try {
@@ -18,7 +18,6 @@ function haptic(type: 'light' | 'medium' = 'light') {
   } catch {}
 }
 
-/* cookie helpers */
 function getCookie(name: string): string {
   try {
     const rows = document.cookie ? document.cookie.split('; ') : [];
@@ -38,9 +37,6 @@ function getInitDataNow(): string {
   return String(getCookie('tg_init_data') || '').trim();
 }
 
-const PRICE_RUB = 39;
-const SUMMARY_PRICE_RUB = 49;
-
 type OptionKey =
   | 'COMBO_RESONANCE'
   | 'COMBO_STRENGTHS'
@@ -52,118 +48,41 @@ type OptionKey =
   | 'COMBO_LESSON'
   | 'SUMMARY';
 
-function daysInMonth(year: number, month: number) {
-  const isLeap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
-  const maxByMonth = [31, isLeap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-  return maxByMonth[month - 1] ?? 31;
-}
+type Payload = {
+  mode: 'COMBO';
+  dob: string;
+  age: number | null;
+  name: string;
+  selected: Record<OptionKey, boolean>;
+  totalRub: number;
+  priceRub: number;
+  summaryPriceRub: number;
+  createdAt: string;
+};
 
-function isDobPartsOk(dd: string, mm: string, yyyy: string) {
-  if (!dd || !mm || !yyyy) return false;
-  if (!/^\d{1,2}$/.test(dd)) return false;
-  if (!/^\d{1,2}$/.test(mm)) return false;
-  if (!/^\d{4}$/.test(yyyy)) return false;
+type DbReport = {
+  id: string;
+  status: string;
+  createdAt: string;
+  errorCode: string | null;
+  errorText: string | null;
+  input: any | null;
+};
 
-  const d = Number(dd);
-  const m = Number(mm);
-  const y = Number(yyyy);
-  if (!d || !m || !y) return false;
-  if (y < 1900 || y > 2100) return false;
-  if (m < 1 || m > 12) return false;
+type GetResp =
+  | {
+      ok: true;
+      report: DbReport | null;
+      text: string;
+      hasText: boolean;
+      paid: boolean;
+    }
+  | { ok: false; error: string; hint?: string };
 
-  const dim = daysInMonth(y, m);
-  if (d < 1 || d > dim) return false;
-  return true;
-}
-
-function formatDob(dd: string, mm: string, yyyy: string) {
-  const d = dd.padStart(2, '0');
-  const m = mm.padStart(2, '0');
-  return `${d}.${m}.${yyyy}`;
-}
-
-function calcAge(dd: string, mm: string, yyyy: string) {
-  const d = Number(dd);
-  const m = Number(mm);
-  const y = Number(yyyy);
-  if (!d || !m || !y) return null;
-
-  const now = new Date();
-  const birth = new Date(y, m - 1, d);
-  if (Number.isNaN(birth.getTime())) return null;
-
-  let age = now.getFullYear() - y;
-  const thisYearsBirthday = new Date(now.getFullYear(), m - 1, d);
-  if (now < thisYearsBirthday) age -= 1;
-
-  if (age < 0 || age > 130) return null;
-  return age;
-}
-
-function cleanName(v: string) {
-  return v.replace(/\s+/g, ' ').trim().slice(0, 64);
-}
-
-export default function DateCodeComboPage() {
-  const router = useRouter();
-
-  useEffect(() => {
-    try {
-      tg()?.ready?.();
-      tg()?.expand?.();
-    } catch {}
-  }, []);
-
-  const [dd, setDd] = useState('');
-  const [mm, setMm] = useState('');
-  const [yyyy, setYyyy] = useState('');
-  const [name, setName] = useState('');
-
-  const mmRef = useRef<HTMLInputElement | null>(null);
-  const yyyyRef = useRef<HTMLInputElement | null>(null);
-
-  const dobOk = useMemo(() => isDobPartsOk(dd.trim(), mm.trim(), yyyy.trim()), [dd, mm, yyyy]);
-  const dobStr = useMemo(() => (dobOk ? formatDob(dd.trim(), mm.trim(), yyyy.trim()) : ''), [dobOk, dd, mm, yyyy]);
-  const age = useMemo(() => (dobOk ? calcAge(dd.trim(), mm.trim(), yyyy.trim()) : null), [dobOk, dd, mm, yyyy]);
-
-  const nameClean = useMemo(() => cleanName(name), [name]);
-  const nameOk = useMemo(() => nameClean.length >= 2, [nameClean]);
-
-  const options = useMemo(
-    () =>
-      [
-        { key: 'COMBO_RESONANCE' as const, title: 'Резонанс имени и жизненного пути', sub: 'Насколько имя “попадает” в ваш путь', price: PRICE_RUB, fixed: false },
-        { key: 'COMBO_STRENGTHS' as const, title: 'Сильные стороны', sub: 'Что усилено именно вашей связкой', price: PRICE_RUB, fixed: false },
-        { key: 'COMBO_WEAKNESSES' as const, title: 'Слабые места', sub: 'Что может ломать стабильность и результат', price: PRICE_RUB, fixed: false },
-        { key: 'COMBO_MONEY' as const, title: 'Деньги и стратегия заработка', sub: 'Лучшая модель денег + что режет доход', price: PRICE_RUB, fixed: false },
-        { key: 'COMBO_CAREER' as const, title: 'Карьера и формат работы', sub: 'Где вы сильнее всего', price: PRICE_RUB, fixed: false },
-        { key: 'COMBO_COMM' as const, title: 'Коммуникация и влияние', sub: 'Как убеждать и какие ошибки общения', price: PRICE_RUB, fixed: false },
-        { key: 'COMBO_ENERGY' as const, title: 'Энергия и режим', sub: 'Что даёт ресурс, что выжигает, идеальный ритм', price: PRICE_RUB, fixed: false },
-        { key: 'COMBO_LESSON' as const, title: 'Главный урок', sub: 'Повторяющаяся тема роста + как закрывать действием', price: PRICE_RUB, fixed: false },
-        { key: 'SUMMARY' as const, title: 'Итог', sub: 'Сводка + 7 стратегических правил', price: SUMMARY_PRICE_RUB, fixed: true },
-      ] as const,
-    []
-  );
-
-  const [selected, setSelected] = useState<Record<OptionKey, boolean>>({
-    COMBO_RESONANCE: true,
-    COMBO_STRENGTHS: true,
-    COMBO_WEAKNESSES: true,
-    COMBO_MONEY: true,
-    COMBO_CAREER: true,
-    COMBO_COMM: true,
-    COMBO_ENERGY: true,
-    COMBO_LESSON: true,
-    SUMMARY: true,
-  });
-
-  const toggleOption = (k: OptionKey) => {
-    if (k === 'SUMMARY') return;
-    haptic('light');
-    setSelected((prev) => ({ ...prev, [k]: !prev[k] }));
-  };
-
-  const paid19Count = useMemo(() => {
+function safeSelectedFromDb(input: any): Record<OptionKey, boolean> | null {
+  try {
+    const sel = input?.selected;
+    if (!sel || typeof sel !== 'object') return null;
     const keys: OptionKey[] = [
       'COMBO_RESONANCE',
       'COMBO_STRENGTHS',
@@ -173,197 +92,462 @@ export default function DateCodeComboPage() {
       'COMBO_COMM',
       'COMBO_ENERGY',
       'COMBO_LESSON',
+      'SUMMARY',
     ];
-    return keys.filter((k) => selected[k] === true).length;
-  }, [selected]);
+    const out: any = {};
+    for (const k of keys) out[k] = sel[k] === true;
+    out.SUMMARY = true;
+    return out as Record<OptionKey, boolean>;
+  } catch {
+    return null;
+  }
+}
 
-  const totalRub = useMemo(() => paid19Count * PRICE_RUB + SUMMARY_PRICE_RUB, [paid19Count]);
+function optionTitle(k: OptionKey) {
+  switch (k) {
+    case 'COMBO_RESONANCE':
+      return 'Резонанс имени и жизненного пути';
+    case 'COMBO_STRENGTHS':
+      return 'Сильные стороны комбо';
+    case 'COMBO_WEAKNESSES':
+      return 'Слабые места комбо';
+    case 'COMBO_MONEY':
+      return 'Деньги и стратегия заработка';
+    case 'COMBO_CAREER':
+      return 'Карьера и формат работы';
+    case 'COMBO_COMM':
+      return 'Коммуникация и влияние';
+    case 'COMBO_ENERGY':
+      return 'Энергия и режим';
+    case 'COMBO_LESSON':
+      return 'Главный урок комбо';
+    case 'SUMMARY':
+      return 'Итог + общие советы';
+    default:
+      return String(k);
+  }
+}
 
-  const submitDisabled = !dobOk || !nameOk;
+function buildShareUrl(): string {
+  const envUrl = (process.env.NEXT_PUBLIC_TMA_SHARE_URL || '').trim();
+  if (envUrl) return envUrl;
 
-  const onDayChange = (v: string) => {
-    const clean = v.replace(/\D/g, '').slice(0, 2);
-    setDd(clean);
-    if (clean.length === 2) mmRef.current?.focus();
-  };
+  try {
+    const u = new URL(window.location.href);
+    return `${u.origin}/date-code`;
+  } catch {
+    return '/date-code';
+  }
+}
 
-  const onMonthChange = (v: string) => {
-    const clean = v.replace(/\D/g, '').slice(0, 2);
-    setMm(clean);
-    if (clean.length === 2) yyyyRef.current?.focus();
-  };
+function openShare() {
+  haptic('medium');
 
-  const onYearChange = (v: string) => {
-    const clean = v.replace(/\D/g, '').slice(0, 4);
-    setYyyy(clean);
-  };
+  const url = buildShareUrl();
+  const text = 'Смотри разбор “Код судьбы” в мини-приложении';
+  const shareLink = `https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`;
 
-  const onSubmit = async () => {
-    haptic('medium');
-    if (!dobOk || !nameOk) return;
+  try {
+    const w = tg();
+    if (w?.openTelegramLink) {
+      w.openTelegramLink(shareLink);
+      return;
+    }
+  } catch {}
 
-    const payload = {
-      mode: 'COMBO' as const,
-      dob: dobStr,
-      age,
-      name: nameClean,
-      selected: { ...selected, SUMMARY: true },
-      totalRub,
-      priceRub: PRICE_RUB,
-      summaryPriceRub: SUMMARY_PRICE_RUB,
-      createdAt: new Date().toISOString(),
-    };
+  try {
+    window.open(shareLink, '_blank');
+  } catch {
+    window.location.href = shareLink;
+  }
+}
 
-    const storageKey = `date_code_combo_${dobStr}_${nameClean}`.slice(0, 140);
+async function copyToClipboard(text: string): Promise<boolean> {
+  try {
+    if (!text) return false;
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
     try {
-      sessionStorage.setItem(storageKey, JSON.stringify(payload));
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', 'true');
+      ta.style.position = 'fixed';
+      ta.style.left = '-9999px';
+      ta.style.top = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      return ok;
+    } catch {
+      return false;
+    }
+  }
+}
+
+function storageKeyForCombo(dob: string, name: string) {
+  return `date_code_combo_${dob}_${name}`.slice(0, 140);
+}
+
+export default function ReportClient() {
+  const sp = useSearchParams();
+  const dob = String(sp.get('dob') || '').trim();
+  const name = String(sp.get('name') || '').trim();
+
+  const [payload, setPayload] = useState<Payload | null>(null);
+  const [dbReport, setDbReport] = useState<DbReport | null>(null);
+  const [dbSelected, setDbSelected] = useState<Record<OptionKey, boolean> | null>(null);
+
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string>('');
+  const [text, setText] = useState<string>('');
+  const [info, setInfo] = useState<string>('');
+  const [paid, setPaid] = useState(false);
+
+  const [toast, setToast] = useState<string>('');
+  const toastOn = Boolean(toast);
+
+  const selectedForUi = payload?.selected ?? dbSelected;
+
+  const selectedKeysRu = useMemo(() => {
+    const s = selectedForUi;
+    if (!s) return [];
+    return (Object.entries(s) as Array<[OptionKey, boolean]>)
+      .filter(([, v]) => v)
+      .map(([k]) => optionTitle(k));
+  }, [selectedForUi]);
+
+  const analyzeStartedRef = useRef(false);
+  const pollRef = useRef<any>(null);
+
+  const stopPoll = () => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  };
+
+  const startPoll = () => {
+    if (pollRef.current) return;
+    pollRef.current = setInterval(() => {
+      fetchFromDb(true);
+    }, 2000);
+  };
+
+  useEffect(() => {
+    try {
+      tg()?.ready?.();
+      tg()?.expand?.();
     } catch {}
+  }, []);
 
-    // ✅ ВАЖНО: отдельный submit для COMBO → /api/combo/submit (не /api/num/submit)
+  useEffect(() => {
+    if (!dob) {
+      setErr('NO_DOB');
+      return;
+    }
+    if (!name) {
+      setErr('NO_NAME');
+      return;
+    }
+
     try {
-      const initData = getInitDataNow();
-      if (initData) {
-        await fetch('/api/combo/submit', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            initData,
-            dob: payload.dob,
-            name: payload.name,
-            age: payload.age,
-            selected: payload.selected,
-            totalRub: payload.totalRub,
-            priceRub: payload.priceRub,
-            summaryPriceRub: payload.summaryPriceRub,
-          }),
-        });
+      const raw = sessionStorage.getItem(storageKeyForCombo(dob, name));
+      if (raw) {
+        const j = JSON.parse(raw) as Payload;
+        if (j && j.mode === 'COMBO' && j.dob === dob && String(j.name) === name) {
+          setPayload(j);
+        }
       }
     } catch {}
 
-    router.push(`/date-code/combo/report?dob=${encodeURIComponent(dobStr)}&name=${encodeURIComponent(nameClean)}`);
+    fetchFromDb(false);
+
+    return () => stopPoll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dob, name]);
+
+  useEffect(() => {
+    if (!toastOn) return;
+    const t = setTimeout(() => setToast(''), 1800);
+    return () => clearTimeout(t);
+  }, [toastOn]);
+
+  const fetchFromDb = async (silent = false) => {
+    const initData = getInitDataNow();
+    if (!initData) {
+      if (!silent) setErr('NO_INIT_DATA');
+      return;
+    }
+
+    if (!silent) {
+      setInfo('');
+      setErr('');
+      setLoading(true);
+    }
+
+    try {
+      const res = await fetch('/api/combo/get', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ initData, dob, name }),
+      });
+
+      const j = (await res.json().catch(() => null)) as GetResp | null;
+
+      if (!res.ok || !j || (j as any).ok !== true) {
+        if (!silent) {
+          setErr((j as any)?.error ? String((j as any).error) : `GET_FAILED(${res.status})`);
+          setLoading(false);
+        }
+        return;
+      }
+
+      const rep = j.report ?? null;
+      setDbReport(rep);
+
+      const selFromDb = rep?.input ? safeSelectedFromDb(rep.input) : null;
+      if (selFromDb) setDbSelected(selFromDb);
+
+      const isPaid = Boolean(j.paid === true);
+      setPaid(isPaid);
+
+      if (j.hasText && j.text) {
+        stopPoll();
+        setText(String(j.text));
+        setInfo('');
+        setLoading(false);
+        return;
+      }
+
+      const s = payload?.selected ?? selFromDb;
+      const age = payload?.age ?? (rep?.input?.age ?? null);
+
+      if (!isPaid) {
+        analyzeStartedRef.current = false;
+        setText('');
+        setInfo('Ожидаем подтверждение оплаты…');
+        startPoll();
+        setLoading(false);
+        return;
+      }
+
+      stopPoll();
+
+      if (!s) {
+        setInfo('Данные для анализа не найдены.');
+        setLoading(false);
+        return;
+      }
+
+      if (!analyzeStartedRef.current) {
+        analyzeStartedRef.current = true;
+        setInfo('Оплата подтверждена. Запускаем анализ…');
+        setLoading(false);
+
+        runAnalyze({ dob, name, age, selected: s });
+        return;
+      }
+
+      setLoading(false);
+    } catch (e: any) {
+      if (!silent) {
+        setErr(e?.message ? String(e.message) : 'NETWORK');
+        setLoading(false);
+      }
+    }
+  };
+
+  const runAnalyze = async (p: { dob: string; name: string; age: any; selected: Record<OptionKey, boolean> }) => {
+    const initData = getInitDataNow();
+    if (!initData) {
+      setErr('NO_INIT_DATA');
+      return;
+    }
+
+    setErr('');
+    setInfo('');
+    setText('');
+    setLoading(true);
+
+    try {
+      const res = await fetch('/api/combo/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          initData,
+          dob: p.dob,
+          name: p.name,
+          age: p.age,
+          selected: p.selected,
+        }),
+      });
+
+      const j = (await res.json().catch(() => null)) as any;
+      if (!res.ok || !j || j.ok !== true || typeof j.text !== 'string') {
+        setErr(j?.error ? String(j.error) : `ANALYZE_FAILED(${res.status})`);
+        setLoading(false);
+        return;
+      }
+
+      setText(String(j.text));
+      setInfo('');
+      setLoading(false);
+
+      fetchFromDb(true);
+    } catch (e: any) {
+      setErr(e?.message ? String(e.message) : 'NETWORK');
+      setLoading(false);
+    }
+  };
+
+  const forceAnalyze = () => {
+    haptic('medium');
+
+    const sel = payload?.selected ?? dbSelected;
+    const repInput = dbReport?.input ?? null;
+    const age = payload?.age ?? (repInput?.age ?? null);
+
+    if (!dob) {
+      setErr('NO_DOB');
+      return;
+    }
+    if (!name) {
+      setErr('NO_NAME');
+      return;
+    }
+    if (!sel) {
+      setErr('NO_SELECTED_IN_DB');
+      setInfo('Нет сохранённых пунктов. Вернись назад и нажми “Продолжить” ещё раз.');
+      return;
+    }
+    if (!paid) {
+      setErr('PAYMENT_NOT_CONFIRMED');
+      setInfo('Сначала должна подтвердиться оплата.');
+      return;
+    }
+
+    analyzeStartedRef.current = true;
+    runAnalyze({ dob, name, age, selected: sel });
   };
 
   const goBack = () => {
     haptic('light');
-    router.push('/date-code');
+    try {
+      window.history.back();
+      return;
+    } catch {}
+    window.location.href = '/date-code/combo';
   };
+
+  const onCopy = async () => {
+    haptic('light');
+    const ok = await copyToClipboard(text || '');
+    setToast(ok ? 'Скопировано' : 'Не удалось скопировать');
+  };
+
+  const showMeta = Boolean(dob || name || dbSelected || payload);
+  const ready = Boolean(text) && !loading && !err;
 
   return (
     <main className="p">
-      <header className="hero" aria-label="Заголовок">
-        <div className="title">КОД СУДЬБЫ</div>
-        <div className="subtitle">дата + имя</div>
+      <header className="hero">
+        <div className="title">РАЗБОР</div>
+        <div className="subtitle">{ready ? 'ОТЧЁТ ГОТОВ' : loading ? 'ПРОХОДИТ АНАЛИЗ...' : paid ? 'ОЖИДАЕМ ОТЧЁТ...' : 'ОЖИДАЕМ ОПЛАТУ...'}</div>
       </header>
 
-      <section className="card" aria-label="Ввод данных">
-        <div className="label center">Дата рождения</div>
-        <div className="desc center">День · месяц · год</div>
+      {toastOn ? (
+        <div className="toast" aria-live="polite">
+          {toast}
+        </div>
+      ) : null}
 
-        <div className="dob">
-          <div className="dobField">
-            <div className="dobLabel">День</div>
-            <input value={dd} onChange={(e) => onDayChange(e.target.value)} inputMode="numeric" placeholder="ДД" />
+      {err ? (
+        <section className="card">
+          <div className="label">Ошибка</div>
+          <div className="warn">{err}</div>
+          <div className="row">
+            <button type="button" className="btn" onClick={() => fetchFromDb(false)} disabled={loading}>
+              Обновить
+            </button>
+            <button type="button" className="btn2" onClick={goBack}>
+              Назад
+            </button>
           </div>
+        </section>
+      ) : null}
 
-          <div className="dobField">
-            <div className="dobLabel">Месяц</div>
-            <input ref={mmRef} value={mm} onChange={(e) => onMonthChange(e.target.value)} inputMode="numeric" placeholder="ММ" />
+      {info ? (
+        <section className="card">
+          <div className="label">Статус</div>
+          <div className="hint">{info}</div>
+          <div className="hint">
+            Оплата: <b>{paid ? 'подтверждена' : 'ожидается'}</b>
           </div>
+        </section>
+      ) : null}
 
-          <div className="dobField">
-            <div className="dobLabel">Год</div>
-            <input ref={yyyyRef} value={yyyy} onChange={(e) => onYearChange(e.target.value)} inputMode="numeric" placeholder="ГГГГ" />
+      {showMeta ? (
+        <section className="card">
+          <div className="label">Данные</div>
+          <div className="meta">
+            <div className="metaLine">
+              <b>Дата:</b> {dob || '—'}
+            </div>
+            <div className="metaLine">
+              <b>Имя:</b> {name || '—'}
+            </div>
+
+            {selectedKeysRu.length ? (
+              <div className="metaLine">
+                <b>Пункты:</b> {selectedKeysRu.join(', ')}
+              </div>
+            ) : (
+              <div className="metaLine muted">Пункты не найдены.</div>
+            )}
           </div>
+        </section>
+      ) : null}
+
+      <section className="card">
+        <div className="label">Отчёт</div>
+
+        {loading ? <div className="hint">Готовим разбор…</div> : null}
+        {!loading && !text ? <div className="hint">Пока пусто.</div> : null}
+
+        {text ? <pre className="out">{text}</pre> : null}
+
+        <div className="row">
+          <button type="button" className="btn2" onClick={onCopy} disabled={!ready}>
+            Скопировать
+          </button>
+          <button type="button" className="btn" onClick={openShare} disabled={!ready}>
+            Поделиться
+          </button>
         </div>
 
-        {dd || mm || yyyy ? (dobOk ? <div className="hint center">Ок: {dobStr}</div> : <div className="warn center">Проверь дату.</div>) : null}
-        {dobOk && age !== null ? (
-          <div className="hint center">
-            Вам — <b>{age}</b> лет
-          </div>
-        ) : null}
-
-        <div className="sep" />
-
-        <div className="label center">Имя</div>
-        <div className="desc center">Введите имя (без фамилии — достаточно)</div>
-
-        <div className="nameBox">
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Например: Александр"
-            inputMode="text"
-            autoComplete="off"
-            spellCheck={false}
-          />
+        <div className="row">
+          <button type="button" className="btn" onClick={() => fetchFromDb(false)} disabled={loading}>
+            Обновить из БД
+          </button>
+          <button type="button" className="btn2" onClick={goBack}>
+            Назад
+          </button>
         </div>
 
-        {name ? (nameOk ? <div className="hint center">Ок: {nameClean}</div> : <div className="warn center">Имя слишком короткое.</div>) : null}
+        <div className="row">
+          <button type="button" className="btn3" onClick={forceAnalyze} disabled={loading}>
+            Пересоздать отчёт (OpenAI)
+          </button>
+        </div>
       </section>
 
-      {dobOk && nameOk ? (
-        <section className="card" aria-label="Выбор пунктов">
-          <div className="label">Что включить в разбор</div>
-          <div className="desc">Выберите необходимые пункты.</div>
-
-          <div className="stack">
-            {options.map((o) => {
-              const on = selected[o.key];
-              const isFixed = o.fixed === true;
-              return (
-                <button
-                  key={o.key}
-                  type="button"
-                  className={`opt ${on ? 'opt--on' : ''} ${isFixed ? 'opt--fixed' : ''}`}
-                  onClick={() => toggleOption(o.key)}
-                  disabled={isFixed}
-                >
-                  <div className="optText">
-                    <div className="optT">{o.title}</div>
-                    <div className="optS">{o.sub}</div>
-                  </div>
-                  <div className="optR">
-                    {isFixed ? (
-                      <span className="fixed">✓ {o.price} ₽</span>
-                    ) : on ? (
-                      <span className="tick">✓</span>
-                    ) : (
-                      <span className="plus">+{o.price} ₽</span>
-                    )}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="total">
-            <div className="totalL">
-              <div className="totalT">Итого</div>
-              <div className="totalS">
-                Пункты: <b>{paid19Count}</b> × {PRICE_RUB} ₽ + Итог {SUMMARY_PRICE_RUB} ₽
-              </div>
-            </div>
-            <div className="totalR">{totalRub} ₽</div>
-          </div>
-
-          <button type="button" className={`send ${submitDisabled ? 'send--off' : ''}`} disabled={submitDisabled} onClick={onSubmit}>
-            Продолжить
-          </button>
-
-          <button type="button" className="back" onClick={goBack}>
-            Назад
-          </button>
-        </section>
-      ) : (
-        <section className="card" aria-label="Подсказка">
-          <div className="label">Дальше</div>
-          <div className="hint">Введите дату и имя — появится выбор пунктов.</div>
-          <button type="button" className="back" onClick={goBack}>
-            Назад
-          </button>
-        </section>
-      )}
+      <section className="bottom" aria-label="Назад">
+        <button type="button" className="backBtn" onClick={goBack}>
+          Назад
+        </button>
+      </section>
 
       <style jsx>{`
         .p {
@@ -393,53 +577,38 @@ export default function DateCodeComboPage() {
           overflow: hidden;
         }
 
-        .hero::before {
-          content: '';
-          position: absolute;
-          inset: -2px;
-          background: radial-gradient(760px 260px at 50% -10%, rgba(139, 92, 246, 0.26) 0%, rgba(139, 92, 246, 0) 62%),
-            radial-gradient(760px 260px at 10% 120%, rgba(45, 126, 247, 0.14) 0%, rgba(45, 126, 247, 0) 58%),
-            radial-gradient(900px 420px at 90% 130%, rgba(245, 158, 11, 0.08) 0%, rgba(245, 158, 11, 0) 60%);
-          pointer-events: none;
-        }
-
         .title {
-          position: relative;
           font-family: Montserrat, Manrope, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, 'Helvetica Neue', Arial;
           font-weight: 900;
-          letter-spacing: 0.22em;
+          letter-spacing: 0.18em;
           text-transform: uppercase;
-          font-size: 28px;
+          font-size: 24px;
           line-height: 1.05;
           margin: 0 0 6px;
-          color: transparent;
-          background: linear-gradient(115deg, #fff3cf 0%, #d2b35b 18%, #f6e7b0 36%, #b8892a 54%, #fff3cf 72%, #d2b35b 100%);
-          background-size: 220% 100%;
-          -webkit-background-clip: text;
-          background-clip: text;
-          text-shadow: 0 1px 0 rgba(255, 255, 255, 0.06), 0 18px 44px rgba(0, 0, 0, 0.65);
-          animation: shimmer 3.2s ease-in-out infinite;
-          will-change: background-position;
-        }
-
-        @keyframes shimmer {
-          0% {
-            background-position: 0% 50%;
-          }
-          50% {
-            background-position: 100% 50%;
-          }
-          100% {
-            background-position: 0% 50%;
-          }
+          color: rgba(233, 236, 255, 0.92);
         }
 
         .subtitle {
-          position: relative;
           font-size: 12px;
           color: rgba(233, 236, 255, 0.64);
           letter-spacing: 0.14em;
           text-transform: uppercase;
+        }
+
+        .toast {
+          width: 100%;
+          max-width: 520px;
+          padding: 10px 12px;
+          border-radius: 14px;
+          border: 1px solid rgba(233, 236, 255, 0.12);
+          background: rgba(12, 16, 32, 0.7);
+          color: rgba(233, 236, 255, 0.9);
+          font-size: 12px;
+          font-weight: 850;
+          text-align: center;
+          box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+          backdrop-filter: blur(12px);
+          -webkit-backdrop-filter: blur(12px);
         }
 
         .card {
@@ -463,83 +632,11 @@ export default function DateCodeComboPage() {
           letter-spacing: -0.01em;
         }
 
-        .desc {
-          font-size: 13px;
-          font-weight: 700;
-          color: rgba(233, 236, 255, 0.68);
-          line-height: 1.35;
-        }
-
-        .center {
-          text-align: center;
-        }
-
-        .sep {
-          margin-top: 6px;
-          padding-top: 10px;
-          border-top: 1px solid rgba(233, 236, 255, 0.1);
-        }
-
-        .dob {
-          display: grid;
-          grid-template-columns: 1fr 1fr 1.35fr;
-          gap: 10px;
-        }
-
-        .dobField {
-          border-radius: 16px;
-          border: 1px solid rgba(233, 236, 255, 0.14);
-          background: rgba(255, 255, 255, 0.03);
-          padding: 10px 10px 12px;
-        }
-
-        .dobLabel {
-          font-size: 11px;
-          color: rgba(233, 236, 255, 0.62);
-          letter-spacing: 0.08em;
-          text-transform: uppercase;
-          margin-bottom: 6px;
-          text-align: center;
-        }
-
-        .dobField input {
-          width: 100%;
-          border: 0;
-          outline: none;
-          background: transparent;
-          color: var(--text);
-          font-size: 18px;
-          font-weight: 950;
-          letter-spacing: 0.04em;
-          text-align: center;
-        }
-
-        .nameBox {
-          border-radius: 16px;
-          border: 1px solid rgba(233, 236, 255, 0.14);
-          background: rgba(255, 255, 255, 0.03);
-          padding: 12px 12px;
-        }
-
-        .nameBox input {
-          width: 100%;
-          border: 0;
-          outline: none;
-          background: transparent;
-          color: var(--text);
-          font-size: 16px;
-          font-weight: 900;
-          letter-spacing: 0.01em;
-          text-align: center;
-        }
-
         .hint {
-          margin-top: 4px;
           font-size: 12px;
           font-weight: 800;
           color: rgba(233, 236, 255, 0.62);
-          padding-top: 10px;
-          border-top: 1px solid rgba(233, 236, 255, 0.1);
+          padding-top: 6px;
           overflow-wrap: anywhere;
         }
 
@@ -548,177 +645,112 @@ export default function DateCodeComboPage() {
           font-weight: 850;
           color: rgba(255, 180, 180, 0.95);
           overflow-wrap: anywhere;
-          padding-top: 10px;
-          border-top: 1px solid rgba(233, 236, 255, 0.1);
-          text-align: center;
         }
 
-        .stack {
-          display: flex;
-          flex-direction: column;
-          gap: 10px;
-        }
-
-        .opt {
-          width: 100%;
-          border-radius: 18px;
-          padding: 14px 12px;
-          border: 1px solid rgba(233, 236, 255, 0.12);
-          background: rgba(255, 255, 255, 0.03);
-          box-shadow: 0 10px 26px rgba(0, 0, 0, 0.38);
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 10px;
-          cursor: pointer;
-          -webkit-tap-highlight-color: transparent;
-          text-align: left;
-          overflow: hidden;
-        }
-
-        .opt--on {
-          border-color: rgba(210, 179, 91, 0.4);
-          background: rgba(255, 255, 255, 0.04);
-        }
-
-        .opt--fixed {
-          cursor: default;
-          opacity: 0.92;
-        }
-
-        .opt:active {
-          transform: scale(0.99);
-          opacity: 0.92;
-        }
-
-        .opt:disabled:active {
-          transform: none;
-          opacity: 0.92;
-        }
-
-        .optText {
-          min-width: 0;
-          flex: 1;
-        }
-
-        .optT {
-          font-weight: 950;
-          color: rgba(233, 236, 255, 0.92);
-          font-size: 14px;
-        }
-
-        .optS {
-          margin-top: 3px;
-          font-size: 12px;
-          color: rgba(233, 236, 255, 0.62);
-          line-height: 1.25;
-        }
-
-        .optR {
-          width: 96px;
-          text-align: right;
-          font-weight: 950;
-          flex: 0 0 96px;
-        }
-
-        .tick {
-          color: rgba(210, 179, 91, 0.95);
-          font-size: 18px;
-        }
-
-        .plus {
-          color: rgba(233, 236, 255, 0.7);
-          font-size: 12px;
-          white-space: nowrap;
-        }
-
-        .fixed {
-          color: rgba(210, 179, 91, 0.95);
-          font-size: 12px;
-          white-space: nowrap;
-        }
-
-        .total {
-          margin-top: 2px;
-          padding-top: 12px;
-          border-top: 1px solid rgba(233, 236, 255, 0.1);
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 10px;
-        }
-
-        .totalT {
-          font-weight: 950;
-          color: rgba(233, 236, 255, 0.92);
-          font-size: 14px;
-        }
-
-        .totalS {
-          margin-top: 3px;
+        .meta {
           font-size: 12px;
           font-weight: 800;
-          color: rgba(233, 236, 255, 0.62);
+          color: rgba(233, 236, 255, 0.7);
+          word-break: break-word;
         }
 
-        .totalR {
-          font-weight: 950;
-          color: rgba(210, 179, 91, 0.95);
-          font-size: 16px;
-          letter-spacing: 0.02em;
-          white-space: nowrap;
+        .metaLine + .metaLine {
+          margin-top: 4px;
         }
 
-        .send {
-          margin-top: 2px;
-          border: 1px solid rgba(210, 179, 91, 0.35);
+        .muted {
+          opacity: 0.7;
+        }
+
+        .out {
+          margin: 0;
+          padding: 12px;
+          border-radius: 16px;
+          border: 1px solid rgba(233, 236, 255, 0.1);
+          background: rgba(0, 0, 0, 0.25);
+          color: rgba(233, 236, 255, 0.92);
+          font-size: 13px;
+          line-height: 1.45;
+          white-space: pre-wrap;
+          word-break: break-word;
+        }
+
+        .row {
+          display: flex;
+          gap: 10px;
+          margin-top: 4px;
+        }
+
+        .btn,
+        .btn2,
+        .btn3 {
+          flex: 1;
           border-radius: 999px;
           padding: 12px 14px;
           font-size: 14px;
           font-weight: 950;
-          color: var(--text);
           cursor: pointer;
-          background: rgba(255, 255, 255, 0.04);
-          box-shadow: 0 14px 38px rgba(0, 0, 0, 0.45);
           -webkit-tap-highlight-color: transparent;
         }
 
-        .send:active {
-          transform: scale(0.98);
-          opacity: 0.92;
+        .btn {
+          border: 1px solid rgba(210, 179, 91, 0.35);
+          color: var(--text);
+          background: rgba(255, 255, 255, 0.04);
+          box-shadow: 0 14px 38px rgba(0, 0, 0, 0.45);
         }
 
-        .send--off {
+        .btn:disabled,
+        .btn2:disabled,
+        .btn3:disabled {
           opacity: 0.55;
           cursor: not-allowed;
           box-shadow: none;
         }
 
-        .back {
-          margin-top: 6px;
-          border-radius: 999px;
-          padding: 12px 14px;
-          font-size: 14px;
-          font-weight: 950;
-          cursor: pointer;
-          -webkit-tap-highlight-color: transparent;
+        .btn2 {
           border: 1px solid rgba(233, 236, 255, 0.14);
           color: rgba(233, 236, 255, 0.92);
           background: rgba(255, 255, 255, 0.03);
         }
 
-        .back:active {
+        .btn3 {
+          border: 1px solid rgba(233, 236, 255, 0.14);
+          color: rgba(233, 236, 255, 0.92);
+          background: rgba(255, 255, 255, 0.02);
+        }
+
+        .btn:active,
+        .btn2:active,
+        .btn3:active {
           transform: scale(0.99);
           opacity: 0.92;
         }
 
-        @media (max-width: 360px) {
-          .dob {
-            grid-template-columns: 1fr 1fr;
-          }
-          .dobField:last-child {
-            grid-column: 1 / -1;
-          }
+        .bottom {
+          margin-top: 14px;
+        }
+
+        .backBtn {
+          width: 100%;
+          padding: 14px 14px;
+          border-radius: 18px;
+          border: 1px solid rgba(233, 236, 255, 0.14);
+          background: rgba(255, 255, 255, 0.03);
+          color: rgba(233, 236, 255, 0.92);
+          font-size: 14px;
+          font-weight: 900;
+          letter-spacing: 0.02em;
+          cursor: pointer;
+          -webkit-tap-highlight-color: transparent;
+          box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+          backdrop-filter: blur(16px);
+          -webkit-backdrop-filter: blur(16px);
+        }
+
+        .backBtn:active {
+          transform: scale(0.99);
+          opacity: 0.92;
         }
       `}</style>
     </main>
