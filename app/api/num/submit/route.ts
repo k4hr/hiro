@@ -79,10 +79,12 @@ function verifyTelegramWebAppInitData(initData: string, botToken: string, maxAge
 
 function parseDobToUtcDate(dob: string): Date | null {
   if (!/^\d{2}\.\d{2}\.\d{4}$/.test(dob)) return null;
+
   const [dd, mm, yyyy] = dob.split('.');
   const y = Number(yyyy);
   const m = Number(mm);
   const d = Number(dd);
+
   if (!y || !m || !d) return null;
   if (y < 1900 || y > 2100) return null;
   if (m < 1 || m > 12) return null;
@@ -90,6 +92,7 @@ function parseDobToUtcDate(dob: string): Date | null {
   const iso = `${yyyy}-${mm}-${dd}T00:00:00.000Z`;
   const dt = new Date(iso);
   if (!Number.isFinite(dt.getTime())) return null;
+
   return dt;
 }
 
@@ -109,7 +112,7 @@ export async function POST(req: Request) {
     if (!body) return NextResponse.json({ ok: false, error: 'BAD_JSON' }, { status: 400 });
 
     const initData = String(body.initData || '').trim();
-    const mode = String(body.mode || '').trim(); // DATE
+    const mode = String(body.mode || '').trim();
     const dob = String(body.dob || '').trim();
 
     const age = safeNum(body.age);
@@ -127,7 +130,11 @@ export async function POST(req: Request) {
 
     const user = await prisma.user.upsert({
       where: { telegramId: v.user.id },
-      update: { username: v.user.username, firstName: v.user.first_name, lastName: v.user.last_name },
+      update: {
+        username: v.user.username,
+        firstName: v.user.first_name,
+        lastName: v.user.last_name,
+      },
       create: {
         telegramId: v.user.id,
         username: v.user.username,
@@ -138,7 +145,6 @@ export async function POST(req: Request) {
       select: { id: true },
     });
 
-    // ✅ HARD-CODED PRICE FOR NUM DATE
     const totalRub = 49;
     const priceRub = 0;
 
@@ -162,7 +168,13 @@ export async function POST(req: Request) {
     };
 
     const draft = await prisma.report.findFirst({
-      where: { userId: user.id, type: 'NUM', status: 'DRAFT', numMode: 'DATE', numDob1: dobDate },
+      where: {
+        userId: user.id,
+        type: 'NUM',
+        status: 'DRAFT',
+        numMode: 'DATE',
+        numDob1: dobDate,
+      },
       orderBy: { createdAt: 'desc' },
       select: { id: true },
     });
@@ -177,15 +189,14 @@ export async function POST(req: Request) {
           numName1: null,
           numDob2: null,
           numName2: null,
-
           priceRub,
           totalRub,
           pricingJson,
-
           errorCode: null,
           errorText: null,
         },
       });
+
       return NextResponse.json({ ok: true, reportId: draft.id, totalRub });
     }
 
@@ -197,7 +208,6 @@ export async function POST(req: Request) {
         input: inputJson,
         numMode: 'DATE',
         numDob1: dobDate,
-
         priceRub,
         totalRub,
         pricingJson,
