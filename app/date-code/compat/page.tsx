@@ -38,8 +38,8 @@ function getInitDataNow(): string {
   return String(getCookie('tg_init_data') || '').trim();
 }
 
-const PRICE_RUB = 29;
-const SUMMARY_PRICE_RUB = 29;
+const PRICE_RUB = 39;
+const SUMMARY_PRICE_RUB = 49;
 
 type OptionKey =
   | 'COMPAT_RESONANCE'
@@ -152,12 +152,12 @@ export default function DateCodeCompatPage() {
   const options = useMemo(
     () =>
       [
-        { key: 'COMPAT_RESONANCE' as const, title: 'Резонанс “моё имя ↔ его путь” и “его имя ↔ мой путь”', sub: 'два направления влияния и как это ощущается', price: PRICE_RUB, fixed: false },
-        { key: 'COMPAT_GOOD' as const, title: 'Сильные зоны пары', sub: 'где легко: поддержка, рост, стабильность', price: PRICE_RUB, fixed: false },
-        { key: 'COMPAT_BAD' as const, title: 'Слабые зоны пары', sub: 'где ломает: триггеры, обиды, разный темп', price: PRICE_RUB, fixed: false },
-        { key: 'COMPAT_TALKS' as const, title: 'Как договариваться (ключ к миру)', sub: 'правила коммуникации под вашу связку', price: PRICE_RUB, fixed: false },
-        { key: 'COMPAT_MONEY_HOME' as const, title: 'Деньги и быт (правила пары)', sub: 'роли, траты, ответственность, чтобы не ругаться', price: PRICE_RUB, fixed: false },
-        { key: 'COMPAT_FORMULA' as const, title: 'Итог: формула пары (фраза + 7 правил)', sub: 'итог всегда включён и стоит 29 ₽', price: SUMMARY_PRICE_RUB, fixed: true },
+        { key: 'COMPAT_RESONANCE' as const, title: 'Резонанс “моё имя ↔ его путь” и “его имя ↔ мой путь”', sub: 'Два направления влияния и как это ощущается', price: PRICE_RUB, fixed: false },
+        { key: 'COMPAT_GOOD' as const, title: 'Сильные зоны пары', sub: 'Где легко: поддержка, рост, стабильность', price: PRICE_RUB, fixed: false },
+        { key: 'COMPAT_BAD' as const, title: 'Слабые зоны пары', sub: 'Где ломает: триггеры, обиды, разный темп', price: PRICE_RUB, fixed: false },
+        { key: 'COMPAT_TALKS' as const, title: 'Как договариваться (ключ к миру)', sub: 'Правила коммуникации под вашу связку', price: PRICE_RUB, fixed: false },
+        { key: 'COMPAT_MONEY_HOME' as const, title: 'Деньги и быт (правила пары)', sub: 'Роли, траты, ответственность, чтобы не ругаться', price: PRICE_RUB, fixed: false },
+        { key: 'COMPAT_FORMULA' as const, title: 'Итог', sub: 'Формула пары, куда двигаться', price: SUMMARY_PRICE_RUB, fixed: true },
       ] as const,
     []
   );
@@ -345,7 +345,7 @@ export default function DateCodeCompatPage() {
       {baseOk ? (
         <section className="card" aria-label="Выбор пунктов">
           <div className="label">Что разобрать</div>
-          <div className="desc">Пункты по 29 ₽. Итог всегда включён и стоит 29 ₽.</div>
+          <div className="desc">Выберите необходимые пункты.</div>
 
           <div className="stack">
             {options.map((o) => {
