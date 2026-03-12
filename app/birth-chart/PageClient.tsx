@@ -119,6 +119,14 @@ function storageKeyAstro(dob: string, place: string, time: string) {
   return `birth_chart_${dob}_${place}_${time}`.slice(0, 140);
 }
 
+function shortDebug(value: any, max = 220) {
+  try {
+    return JSON.stringify(value).slice(0, max);
+  } catch {
+    return String(value ?? '').slice(0, max);
+  }
+}
+
 export default function PageClient() {
   const router = useRouter();
 
@@ -271,14 +279,46 @@ export default function PageClient() {
         }),
       });
 
-      const sJson = (await sRes.json().catch(() => null)) as any;
-      if (!sRes.ok || !sJson || sJson.ok !== true || typeof sJson.reportId !== 'string') {
+      const sText = await sRes.text().catch(() => '');
+      let sJson: any = null;
+
+      try {
+        sJson = sText ? JSON.parse(sText) : null;
+      } catch {
+        sJson = null;
+      }
+
+      console.log('[ASTRO_SUBMIT_RESPONSE]', {
+        status: sRes.status,
+        ok: sRes.ok,
+        raw: sText,
+        json: sJson,
+      });
+
+      if (!sRes.ok) {
         setSubmitting(false);
-        setSubmitErr(sJson?.error ? String(sJson.error) : `SUBMIT_FAILED(${sRes.status})`);
+        setSubmitErr(sJson?.error ? String(sJson.error) : `SUBMIT_HTTP_${sRes.status}`);
         return;
       }
 
-      const reportId = String(sJson.reportId);
+      if (!sJson || sJson.ok !== true) {
+        setSubmitting(false);
+        setSubmitErr(sJson?.error ? String(sJson.error) : 'SUBMIT_BAD_JSON');
+        return;
+      }
+
+      const reportId =
+        typeof sJson.reportId === 'string' && sJson.reportId.trim()
+          ? sJson.reportId.trim()
+          : typeof sJson.report?.id === 'string' && sJson.report.id.trim()
+            ? sJson.report.id.trim()
+            : '';
+
+      if (!reportId) {
+        setSubmitting(false);
+        setSubmitErr(`NO_REPORT_ID: ${shortDebug(sJson)}`);
+        return;
+      }
 
       const returnPath =
         `/birth-chart/report?dob=${encodeURIComponent(payload.dob)}` +
@@ -296,12 +336,35 @@ export default function PageClient() {
         }),
       });
 
-      const pJson = (await pRes.json().catch(() => null)) as any;
-      const confirmationUrl = String(pJson?.confirmationUrl ?? '');
+      const pText = await pRes.text().catch(() => '');
+      let pJson: any = null;
+
+      try {
+        pJson = pText ? JSON.parse(pText) : null;
+      } catch {
+        pJson = null;
+      }
+
+      console.log('[YOOKASSA_CREATE_PAYMENT_RESPONSE_CLIENT]', {
+        status: pRes.status,
+        ok: pRes.ok,
+        raw: pText,
+        json: pJson,
+      });
+
+      const confirmationUrl = String(pJson?.confirmationUrl ?? '').trim();
 
       if (!pRes.ok || !pJson || pJson.ok !== true || !confirmationUrl) {
         setSubmitting(false);
-        setSubmitErr(pJson?.error ? String(pJson.error) : `PAYMENT_CREATE_FAILED(${pRes.status})`);
+        setSubmitErr(
+          pJson?.error
+            ? String(pJson.error)
+            : !pRes.ok
+              ? `PAYMENT_HTTP_${pRes.status}`
+              : !pJson
+                ? 'PAYMENT_BAD_JSON'
+                : 'NO_CONFIRMATION_URL'
+        );
         return;
       }
 
