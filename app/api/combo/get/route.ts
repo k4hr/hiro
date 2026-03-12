@@ -114,12 +114,20 @@ export async function POST(req: Request) {
     const v = verifyTelegramWebAppInitData(initData, botToken);
     if (!v.ok) return NextResponse.json({ ok: false, error: v.error }, { status: 401 });
 
-    const telegramId = v.user.id;
-    const user = await prisma.user.findUnique({ where: { telegramId }, select: { id: true } });
+    const user = await prisma.user.findUnique({
+      where: { telegramId: v.user.id },
+      select: { id: true },
+    });
     if (!user) return NextResponse.json({ ok: false, error: 'NO_USER' }, { status: 404 });
 
     const last = await prisma.report.findFirst({
-      where: { userId: user.id, type: 'NUM', numMode: 'COMBO', numDob1: dobDate, numName1: name },
+      where: {
+        userId: user.id,
+        type: 'NUM',
+        numMode: 'COMBO',
+        numDob1: dobDate,
+        numName1: name,
+      },
       orderBy: { createdAt: 'desc' },
       select: {
         id: true,
@@ -129,10 +137,13 @@ export async function POST(req: Request) {
         errorText: true,
         input: true,
         text: true,
+        pricingJson: true,
       },
     });
 
     const hasText = Boolean(last?.status === 'READY' && last?.text);
+    const ykStatus = (last?.pricingJson as any)?.yookassa?.status;
+    const paid = String(ykStatus || '').toLowerCase() === 'succeeded';
 
     return NextResponse.json({
       ok: true,
@@ -148,6 +159,7 @@ export async function POST(req: Request) {
         : null,
       text: hasText ? String(last!.text) : '',
       hasText,
+      paid,
     });
   } catch (e: any) {
     console.error(e);
