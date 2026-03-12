@@ -1,4 +1,4 @@
-/* path: app/api/astro/get/route.ts */
+/* path: app/api/astro/submit/route.ts */
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { prisma } from '@/lib/prisma';
@@ -53,7 +53,9 @@ function verifyTelegramWebAppInitData(initData: string, botToken: string, maxAge
   const secretKey = crypto.createHmac('sha256', 'WebAppData').update(botToken).digest();
   const computedHash = crypto.createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
 
-  if (!timingSafeEqualHex(computedHash, hash)) return { ok: false as const, error: 'BAD_HASH' as const };
+  if (!timingSafeEqualHex(computedHash, hash)) {
+    return { ok: false as const, error: 'BAD_HASH' as const };
+  }
 
   const userStr = params.get('user');
   if (!userStr) return { ok: false as const, error: 'NO_USER' as const };
@@ -90,76 +92,197 @@ function cleanText(v: any, max = 96): string {
   return String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
 }
 
+function cleanTime(v: any): string {
+  return String(v ?? '').replace(/\s+/g, '').trim().slice(0, 8);
+}
+
+function safeNum(v: any): number | null {
+  if (v === null || v === undefined) return null;
+  const n = Number(v);
+  if (!Number.isFinite(n)) return null;
+  return n;
+}
+
+function countSelectedTrue(selected: any): number {
+  if (!selected || typeof selected !== 'object') return 0;
+
+  let c = 0;
+  for (const [k, v] of Object.entries(selected)) {
+    if (String(k).toUpperCase() === 'ASTRO_FORMULA') continue;
+    if (v === true) c += 1;
+  }
+  return c;
+}
+
 export async function POST(req: Request) {
   try {
     const botToken = envClean('TELEGRAM_BOT_TOKEN');
-    if (!botToken) return NextResponse.json({ ok: false, error: 'NO_BOT_TOKEN' }, { status: 500 });
+    if (!botToken) {
+      return NextResponse.json({ ok: false, error: 'NO_BOT_TOKEN' }, { status: 500 });
+    }
 
     const body = (await req.json().catch(() => null)) as any;
-    if (!body) return NextResponse.json({ ok: false, error: 'BAD_JSON' }, { status: 400 });
+    if (!body) {
+      return NextResponse.json({ ok: false, error: 'BAD_JSON' }, { status: 400 });
+    }
 
     const initData = String(body.initData || '').trim();
     const dob = String(body.dob || '').trim();
     const birthPlace = cleanText(body.birthPlace, 96);
-    const birthTime = cleanText(body.birthTime, 8);
+    const birthTime = cleanTime(body.birthTime);
+    const accuracyLevelRaw = safeNum(body.accuracyLevel);
+    const accuracyLevel =
+      accuracyLevelRaw !== null ? Math.max(0, Math.min(3, Math.trunc(accuracyLevelRaw))) : 0;
 
-    if (!initData) return NextResponse.json({ ok: false, error: 'NO_INIT_DATA' }, { status: 401 });
-    if (!dob) return NextResponse.json({ ok: false, error: 'NO_DOB' }, { status: 400 });
+    const age = safeNum(body.age);
 
-    const d = parseDobToUtcDate(dob);
-    if (!d) return NextResponse.json({ ok: false, error: 'BAD_DOB' }, { status: 400 });
+    const selected =
+      body.selected && typeof body.selected === 'object'
+        ? {
+            ...body.selected,
+            ASTRO_FORMULA: true,
+          }
+        : { ASTRO_FORMULA: true };
+
+    if (!initData) {
+      return NextResponse.json({ ok: false, error: 'NO_INIT_DATA' }, { status: 401 });
+    }
+
+    if (!dob) {
+      return NextResponse.json({ ok: false, error: 'NO_DOB' }, { status: 400 });
+    }
+
+    const dobDate = parseDobToUtcDate(dob);
+    if (!dobDate) {
+      return NextResponse.json({ ok: false, error: 'BAD_DOB' }, { status: 400 });
+    }
 
     const v = verifyTelegramWebAppInitData(initData, botToken);
-    if (!v.ok) return NextResponse.json({ ok: false, error: v.error }, { status: 401 });
+    if (!v.ok) {
+      return NextResponse.json({ ok: false, error: v.error }, { status: 401 });
+    }
 
-    const telegramId = v.user.id;
-    const user = await prisma.user.findUnique({ where: { telegramId }, select: { id: true } });
-    if (!user) return NextResponse.json({ ok: false, error: 'NO_USER' }, { status: 404 });
+    const user = await prisma.user.upsert({
+      where: { telegramId: v.user.id },
+      update: {
+        username: v.user.username,
+        firstName: v.user.first_name,
+        lastName: v.user.last_name,
+      },
+      create: {
+        telegramId: v.user.id,
+        username: v.user.username,
+        firstName: v.user.first_name,
+        lastName: v.user.last_name,
+        locale: 'ru',
+      },
+      select: { id: true },
+    });
 
-    const last = await prisma.report.findFirst({
+    const modulePriceRub = 39;
+    const summaryPriceRub = 49;
+
+    const paidCount = countSelectedTrue(selected);
+    const totalRub = paidCount * modulePriceRub + summaryPriceRub;
+
+    const inputJson = {
+      mode: 'ASTRO',
+      astroMode: 'CHART',
+      dob,
+      age,
+      birthPlace,
+      birthTime,
+      accuracyLevel,
+      selected,
+      clientPricing: {
+        totalRub: safeNum(body.totalRub),
+        priceRub: safeNum(body.priceRub),
+        summaryPriceRub: safeNum(body.summaryPriceRub),
+      },
+      savedAt: new Date().toISOString(),
+    };
+
+    const pricingJson = {
+      kind: 'ASTRO_CHART',
+      modulePriceRub,
+      summaryPriceRub,
+      paidCount,
+      totalRub,
+      selected,
+      accuracyLevel,
+    };
+
+    const draft = await prisma.report.findFirst({
       where: {
         userId: user.id,
         type: 'ASTRO',
+        status: 'DRAFT',
         astroMode: 'CHART',
-        astroDob: d,
+        astroDob: dobDate,
         astroCity: birthPlace || null,
         astroTime: birthTime || null,
       },
       orderBy: { createdAt: 'desc' },
-      select: {
-        id: true,
-        status: true,
-        createdAt: true,
-        errorCode: true,
-        errorText: true,
-        input: true,
-        text: true,
-        pricingJson: true,
-      },
+      select: { id: true },
     });
 
-    const hasText = Boolean(last?.status === 'READY' && last?.text);
-    const ykStatus = (last?.pricingJson as any)?.yookassa?.status;
-    const paid = String(ykStatus || '').toLowerCase() === 'succeeded';
+    if (draft) {
+      await prisma.report.update({
+        where: { id: draft.id },
+        data: {
+          input: inputJson,
+          type: 'ASTRO',
+          astroMode: 'CHART',
+          astroDob: dobDate,
+          astroCity: birthPlace || null,
+          astroTime: birthTime || null,
+          priceRub: modulePriceRub,
+          totalRub,
+          pricingJson,
+          errorCode: null,
+          errorText: null,
+          text: null,
+        },
+      });
+
+      return NextResponse.json({
+        ok: true,
+        reportId: draft.id,
+        totalRub,
+      });
+    }
+
+    const created = await prisma.report.create({
+      data: {
+        userId: user.id,
+        type: 'ASTRO',
+        status: 'DRAFT',
+        input: inputJson,
+        astroMode: 'CHART',
+        astroDob: dobDate,
+        astroCity: birthPlace || null,
+        astroTime: birthTime || null,
+        priceRub: modulePriceRub,
+        totalRub,
+        pricingJson,
+      },
+      select: { id: true },
+    });
 
     return NextResponse.json({
       ok: true,
-      report: last
-        ? {
-            id: last.id,
-            status: last.status,
-            createdAt: last.createdAt.toISOString(),
-            errorCode: last.errorCode,
-            errorText: last.errorText,
-            input: last.input,
-          }
-        : null,
-      text: hasText ? String(last!.text) : '',
-      hasText,
-      paid,
+      reportId: created.id,
+      totalRub,
     });
   } catch (e: any) {
-    console.error('[ASTRO_GET_ERROR]', e);
-    return NextResponse.json({ ok: false, error: 'GET_FAILED', hint: String(e?.message || 'See server logs') }, { status: 500 });
+    console.error('[ASTRO_SUBMIT_ERROR]', e);
+    return NextResponse.json(
+      {
+        ok: false,
+        error: 'SUBMIT_FAILED',
+        hint: String(e?.message || 'See server logs'),
+      },
+      { status: 500 }
+    );
   }
 }
