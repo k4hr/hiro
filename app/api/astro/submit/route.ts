@@ -1,4 +1,4 @@
-/* path: app/api/astro/submit/route.ts */
+/* path: app/api/astro/get/route.ts */
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { prisma } from '@/lib/prisma';
@@ -12,14 +12,6 @@ type TgUser = {
   first_name: string | null;
   last_name: string | null;
 };
-
-type OptionKey =
-  | 'ASTRO_PERSON'
-  | 'ASTRO_LOVE'
-  | 'ASTRO_MONEY'
-  | 'ASTRO_CAREER'
-  | 'ASTRO_TIMING'
-  | 'ASTRO_FORMULA';
 
 function envClean(name: string) {
   return String(process.env[name] ?? '').replace(/[\r\n]/g, '').trim();
@@ -94,23 +86,8 @@ function parseDobToUtcDate(dob: string): Date | null {
   return dt;
 }
 
-function safeNum(v: any): number | null {
-  if (v === null || v === undefined) return null;
-  const n = Number(v);
-  if (!Number.isFinite(n)) return null;
-  return n;
-}
-
 function cleanText(v: any, max = 96): string {
   return String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
-}
-
-function countPaid(selected: any): number {
-  const keys: OptionKey[] = ['ASTRO_PERSON', 'ASTRO_LOVE', 'ASTRO_MONEY', 'ASTRO_CAREER', 'ASTRO_TIMING'];
-  if (!selected || typeof selected !== 'object') return 0;
-  let c = 0;
-  for (const k of keys) if (selected[k] === true) c += 1;
-  return c;
 }
 
 export async function POST(req: Request) {
@@ -123,13 +100,8 @@ export async function POST(req: Request) {
 
     const initData = String(body.initData || '').trim();
     const dob = String(body.dob || '').trim();
-
-    const age = safeNum(body.age);
     const birthPlace = cleanText(body.birthPlace, 96);
     const birthTime = cleanText(body.birthTime, 8);
-    const accuracyLevel = safeNum(body.accuracyLevel);
-
-    const selected = body.selected && typeof body.selected === 'object' ? body.selected : {};
 
     if (!initData) return NextResponse.json({ ok: false, error: 'NO_INIT_DATA' }, { status: 401 });
     if (!dob) return NextResponse.json({ ok: false, error: 'NO_DOB' }, { status: 400 });
@@ -140,111 +112,54 @@ export async function POST(req: Request) {
     const v = verifyTelegramWebAppInitData(initData, botToken);
     if (!v.ok) return NextResponse.json({ ok: false, error: v.error }, { status: 401 });
 
-    const user = await prisma.user.upsert({
-      where: { telegramId: v.user.id },
-      update: { username: v.user.username, firstName: v.user.first_name, lastName: v.user.last_name },
-      create: {
-        telegramId: v.user.id,
-        username: v.user.username,
-        firstName: v.user.first_name,
-        lastName: v.user.last_name,
-        locale: 'ru',
-      },
-      select: { id: true },
-    });
+    const telegramId = v.user.id;
+    const user = await prisma.user.findUnique({ where: { telegramId }, select: { id: true } });
+    if (!user) return NextResponse.json({ ok: false, error: 'NO_USER' }, { status: 404 });
 
-    // ✅ HARD-CODED PRICES
-    const modulePriceRub = 39;
-    const summaryPriceRub = 49;
-
-    const selectedFixed = { ...(selected ?? {}), ASTRO_FORMULA: true };
-    const paidCount = countPaid(selectedFixed);
-    const totalRub = paidCount * modulePriceRub + summaryPriceRub;
-
-    const inputJson = {
-      mode: 'ASTRO',
-      dob,
-      age,
-      birthPlace,
-      birthTime,
-      accuracyLevel,
-      selected: selectedFixed,
-      clientPricing: {
-        totalRub: safeNum(body.totalRub),
-        priceRub: safeNum(body.priceRub),
-        summaryPriceRub: safeNum(body.summaryPriceRub),
-      },
-      savedAt: new Date().toISOString(),
-    };
-
-    const pricingJson = {
-      kind: 'ASTRO',
-      modulePriceRub,
-      summaryPriceRub,
-      paidCount,
-      totalRub,
-      selected: selectedFixed,
-    };
-
-    const draft = await prisma.report.findFirst({
+    const last = await prisma.report.findFirst({
       where: {
         userId: user.id,
         type: 'ASTRO',
-        status: 'DRAFT',
         astroMode: 'CHART',
         astroDob: d,
         astroCity: birthPlace || null,
         astroTime: birthTime || null,
       },
       orderBy: { createdAt: 'desc' },
-      select: { id: true },
-    });
-
-    if (draft) {
-      await prisma.report.update({
-        where: { id: draft.id },
-        data: {
-          input: inputJson,
-          type: 'ASTRO',
-          astroMode: 'CHART',
-          astroDob: d,
-          astroCity: birthPlace || null,
-          astroTime: birthTime || null,
-          astroAccuracyLevel: accuracyLevel ?? null,
-
-          priceRub: modulePriceRub,
-          totalRub,
-          pricingJson,
-
-          errorCode: null,
-          errorText: null,
-        },
-      });
-      return NextResponse.json({ ok: true, reportId: draft.id, totalRub });
-    }
-
-    const created = await prisma.report.create({
-      data: {
-        userId: user.id,
-        type: 'ASTRO',
-        status: 'DRAFT',
-        input: inputJson,
-        astroMode: 'CHART',
-        astroDob: d,
-        astroCity: birthPlace || null,
-        astroTime: birthTime || null,
-        astroAccuracyLevel: accuracyLevel ?? null,
-
-        priceRub: modulePriceRub,
-        totalRub,
-        pricingJson,
+      select: {
+        id: true,
+        status: true,
+        createdAt: true,
+        errorCode: true,
+        errorText: true,
+        input: true,
+        text: true,
+        pricingJson: true,
       },
-      select: { id: true },
     });
 
-    return NextResponse.json({ ok: true, reportId: created.id, totalRub });
+    const hasText = Boolean(last?.status === 'READY' && last?.text);
+    const ykStatus = (last?.pricingJson as any)?.yookassa?.status;
+    const paid = String(ykStatus || '').toLowerCase() === 'succeeded';
+
+    return NextResponse.json({
+      ok: true,
+      report: last
+        ? {
+            id: last.id,
+            status: last.status,
+            createdAt: last.createdAt.toISOString(),
+            errorCode: last.errorCode,
+            errorText: last.errorText,
+            input: last.input,
+          }
+        : null,
+      text: hasText ? String(last!.text) : '',
+      hasText,
+      paid,
+    });
   } catch (e: any) {
-    console.error(e);
-    return NextResponse.json({ ok: false, error: 'SUBMIT_FAILED', hint: String(e?.message || 'See server logs') }, { status: 500 });
+    console.error('[ASTRO_GET_ERROR]', e);
+    return NextResponse.json({ ok: false, error: 'GET_FAILED', hint: String(e?.message || 'See server logs') }, { status: 500 });
   }
 }
