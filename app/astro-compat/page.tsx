@@ -18,7 +18,6 @@ function haptic(type: 'light' | 'medium' = 'light') {
   } catch {}
 }
 
-/* cookie helpers */
 function getCookie(name: string): string {
   try {
     const rows = document.cookie ? document.cookie.split('; ') : [];
@@ -136,6 +135,14 @@ function storageKeyAstroCompat(a: { dob: string; place: string; time: string }, 
   return `astro_compat_${a.dob}_${a.place}_${a.time}_${b.dob}_${b.place}_${b.time}`.slice(0, 140);
 }
 
+function shortDebug(value: any, max = 220) {
+  try {
+    return JSON.stringify(value).slice(0, max);
+  } catch {
+    return String(value ?? '').slice(0, max);
+  }
+}
+
 export default function AstroCompatPage() {
   const router = useRouter();
 
@@ -146,7 +153,9 @@ export default function AstroCompatPage() {
     } catch {}
   }, []);
 
-  // YOU
+  const [submitErr, setSubmitErr] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
   const [dd1, setDd1] = useState('');
   const [mm1, setMm1] = useState('');
   const [yy1, setYy1] = useState('');
@@ -169,7 +178,6 @@ export default function AstroCompatPage() {
   const acc1 = useMemo(() => accuracyLevelFor(dobOk1, place1Clean, timeStr1), [dobOk1, place1Clean, timeStr1]);
   const accText1 = useMemo(() => accuracyTextFor(acc1), [acc1]);
 
-  // PARTNER
   const [dd2, setDd2] = useState('');
   const [mm2, setMm2] = useState('');
   const [yy2, setYy2] = useState('');
@@ -229,9 +237,8 @@ export default function AstroCompatPage() {
 
   const totalRub = useMemo(() => paidCount * PRICE_RUB + SUMMARY_PRICE_RUB, [paidCount]);
 
-  const submitDisabled = !baseOk;
+  const submitDisabled = !baseOk || submitting;
 
-  // focus + numeric
   const onDay1 = (v: string) => {
     const clean = v.replace(/\D/g, '').slice(0, 2);
     setDd1(clean);
@@ -259,6 +266,15 @@ export default function AstroCompatPage() {
   const onSubmit = async () => {
     haptic('medium');
     if (submitDisabled) return;
+
+    const initData = getInitDataNow();
+    if (!initData) {
+      setSubmitErr('NO_INIT_DATA');
+      return;
+    }
+
+    setSubmitting(true);
+    setSubmitErr('');
 
     const payload = {
       mode: 'ASTRO_COMPAT' as const,
@@ -293,29 +309,121 @@ export default function AstroCompatPage() {
     } catch {}
 
     try {
-      const initData = getInitDataNow();
-      if (initData) {
-        await fetch('/api/astro-compat/submit', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            initData,
-            a: payload.a,
-            b: payload.b,
-            selected: payload.selected,
-            totalRub: payload.totalRub,
-            priceRub: payload.priceRub,
-            summaryPriceRub: payload.summaryPriceRub,
-          }),
-        });
-      }
-    } catch {}
+      const sRes = await fetch('/api/astro-compat/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          initData,
+          a: payload.a,
+          b: payload.b,
+          selected: payload.selected,
+          totalRub: payload.totalRub,
+          priceRub: payload.priceRub,
+          summaryPriceRub: payload.summaryPriceRub,
+        }),
+      });
 
-    router.push(
-      `/astro-compat/report?dob1=${encodeURIComponent(payload.a.dob)}&place1=${encodeURIComponent(payload.a.birthPlace)}&time1=${encodeURIComponent(
-        payload.a.birthTime
-      )}&dob2=${encodeURIComponent(payload.b.dob)}&place2=${encodeURIComponent(payload.b.birthPlace)}&time2=${encodeURIComponent(payload.b.birthTime)}`
-    );
+      const sText = await sRes.text().catch(() => '');
+      let sJson: any = null;
+
+      try {
+        sJson = sText ? JSON.parse(sText) : null;
+      } catch {
+        sJson = null;
+      }
+
+      console.log('[ASTRO_COMPAT_SUBMIT_RESPONSE]', {
+        status: sRes.status,
+        ok: sRes.ok,
+        raw: sText,
+        json: sJson,
+      });
+
+      if (!sRes.ok) {
+        setSubmitting(false);
+        setSubmitErr(sJson?.error ? String(sJson.error) : `SUBMIT_HTTP_${sRes.status}`);
+        return;
+      }
+
+      if (!sJson || sJson.ok !== true) {
+        setSubmitting(false);
+        setSubmitErr(sJson?.error ? String(sJson.error) : 'SUBMIT_BAD_JSON');
+        return;
+      }
+
+      const reportId =
+        typeof sJson.reportId === 'string' && sJson.reportId.trim()
+          ? sJson.reportId.trim()
+          : typeof sJson.report?.id === 'string' && sJson.report.id.trim()
+            ? sJson.report.id.trim()
+            : '';
+
+      if (!reportId) {
+        setSubmitting(false);
+        setSubmitErr(`NO_REPORT_ID: ${shortDebug(sJson)}`);
+        return;
+      }
+
+      const returnPath =
+        `/astro-compat/report?dob1=${encodeURIComponent(payload.a.dob)}` +
+        `&place1=${encodeURIComponent(payload.a.birthPlace)}` +
+        `&time1=${encodeURIComponent(payload.a.birthTime)}` +
+        `&dob2=${encodeURIComponent(payload.b.dob)}` +
+        `&place2=${encodeURIComponent(payload.b.birthPlace)}` +
+        `&time2=${encodeURIComponent(payload.b.birthTime)}` +
+        `&reportId=${encodeURIComponent(reportId)}`;
+
+      const pRes = await fetch('/api/yookassa/create-payment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          reportId,
+          description: 'Арканум · астрологическая совместимость',
+          returnPath,
+        }),
+      });
+
+      const pText = await pRes.text().catch(() => '');
+      let pJson: any = null;
+
+      try {
+        pJson = pText ? JSON.parse(pText) : null;
+      } catch {
+        pJson = null;
+      }
+
+      console.log('[YOOKASSA_CREATE_PAYMENT_RESPONSE_CLIENT_ASTRO_COMPAT]', {
+        status: pRes.status,
+        ok: pRes.ok,
+        raw: pText,
+        json: pJson,
+      });
+
+      const confirmationUrl = String(pJson?.confirmationUrl ?? '').trim();
+
+      if (!pRes.ok || !pJson || pJson.ok !== true || !confirmationUrl) {
+        setSubmitting(false);
+        setSubmitErr(
+          pJson?.error
+            ? String(pJson.error)
+            : !pRes.ok
+              ? `PAYMENT_HTTP_${pRes.status}`
+              : !pJson
+                ? 'PAYMENT_BAD_JSON'
+                : 'NO_CONFIRMATION_URL'
+        );
+        return;
+      }
+
+      try {
+        tg()?.openLink?.(confirmationUrl);
+      } catch {
+        window.location.href = confirmationUrl;
+      }
+    } catch (e: any) {
+      setSubmitting(false);
+      setSubmitErr(e?.message ? String(e.message) : 'NETWORK_ERROR');
+    }
   };
 
   const goBack = () => {
@@ -329,6 +437,13 @@ export default function AstroCompatPage() {
         <div className="title">АРКАНУМ</div>
         <div className="subtitle">астро-совместимость</div>
       </header>
+
+      {submitErr ? (
+        <section className="card" aria-label="Ошибка">
+          <div className="label">Ошибка</div>
+          <div className="warn">{submitErr}</div>
+        </section>
+      ) : null}
 
       <section className="card">
         <div className="label center">Вы</div>
@@ -473,7 +588,7 @@ export default function AstroCompatPage() {
                   type="button"
                   className={`opt ${on ? 'opt--on' : ''} ${isFixed ? 'opt--fixed' : ''}`}
                   onClick={() => toggleOption(o.key)}
-                  disabled={isFixed}
+                  disabled={isFixed || submitting}
                 >
                   <div className="optText">
                     <div className="optT">{o.title}</div>
@@ -498,10 +613,10 @@ export default function AstroCompatPage() {
           </div>
 
           <button type="button" className={`send ${submitDisabled ? 'send--off' : ''}`} disabled={submitDisabled} onClick={onSubmit}>
-            Продолжить
+            {submitting ? 'Открываю оплату…' : 'Продолжить'}
           </button>
 
-          <button type="button" className="back" onClick={goBack}>
+          <button type="button" className="back" onClick={goBack} disabled={submitting}>
             Назад
           </button>
         </section>
