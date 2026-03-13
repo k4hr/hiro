@@ -1,7 +1,7 @@
 /* path: app/astro-compat/report/ReportClient.tsx */
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 
 function tg(): any | null {
@@ -71,6 +71,7 @@ type GetResp =
       report: DbReport | null;
       text: string;
       hasText: boolean;
+      paid: boolean;
     }
   | { ok: false; error: string; hint?: string };
 
@@ -193,6 +194,7 @@ export default function ReportClient() {
   const [err, setErr] = useState<string>('');
   const [text, setText] = useState<string>('');
   const [info, setInfo] = useState<string>('');
+  const [paid, setPaid] = useState<boolean>(false);
 
   const [toast, setToast] = useState<string>('');
   const toastOn = Boolean(toast);
@@ -220,7 +222,6 @@ export default function ReportClient() {
       return;
     }
 
-    // 1) payload из sessionStorage (первый заход)
     try {
       const raw = sessionStorage.getItem(sk);
       if (raw) {
@@ -229,7 +230,6 @@ export default function ReportClient() {
       }
     } catch {}
 
-    // 2) всегда тянем из БД
     fetchFromDb();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dob1, place1, time1, dob2, place2, time2, sk]);
@@ -240,16 +240,39 @@ export default function ReportClient() {
     return () => clearTimeout(t);
   }, [toastOn]);
 
-  const fetchFromDb = async () => {
+  const analyzeStartedRef = useRef(false);
+
+  const pollRef = useRef<any>(null);
+  const stopPoll = () => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  };
+  const startPoll = () => {
+    if (pollRef.current) return;
+    pollRef.current = setInterval(() => {
+      fetchFromDb(true);
+    }, 2000);
+  };
+
+  useEffect(() => {
+    return () => stopPoll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const fetchFromDb = async (silent = false) => {
     const initData = getInitDataNow();
     if (!initData) {
-      setErr('NO_INIT_DATA');
+      if (!silent) setErr('NO_INIT_DATA');
       return;
     }
 
-    setInfo('');
-    setErr('');
-    setLoading(true);
+    if (!silent) {
+      setInfo('');
+      setErr('');
+      setLoading(true);
+    }
 
     try {
       const res = await fetch('/api/astro-compat/get', {
@@ -265,8 +288,10 @@ export default function ReportClient() {
       const j = (await res.json().catch(() => null)) as GetResp | null;
 
       if (!res.ok || !j || (j as any).ok !== true) {
-        setErr((j as any)?.error ? String((j as any).error) : `GET_FAILED(${res.status})`);
-        setLoading(false);
+        if (!silent) {
+          setErr((j as any)?.error ? String((j as any).error) : `GET_FAILED(${res.status})`);
+          setLoading(false);
+        }
         return;
       }
 
@@ -276,14 +301,16 @@ export default function ReportClient() {
       const selFromDb = rep?.input ? safeSelectedFromDb(rep.input) : null;
       if (selFromDb) setDbSelected(selFromDb);
 
+      const isPaid = Boolean((j as any).paid === true);
+      setPaid(isPaid);
+
       if ((j as any).hasText && (j as any).text) {
+        stopPoll();
         setText(String((j as any).text));
+        setInfo('');
         setLoading(false);
         return;
       }
-
-      setInfo('Отчёт ещё не создан. Сейчас запустим анализ.');
-      setLoading(false);
 
       const s = payload?.selected ?? selFromDb;
 
@@ -298,16 +325,42 @@ export default function ReportClient() {
       const bPlace = payload?.b?.birthPlace ?? place2;
       const bTime = payload?.b?.birthTime ?? time2;
 
-      if (s) {
+      if (!isPaid) {
+        analyzeStartedRef.current = false;
+        setText('');
+        setInfo('Ожидаем подтверждение оплаты…');
+        startPoll();
+        setLoading(false);
+        return;
+      }
+
+      stopPoll();
+
+      if (!s) {
+        setInfo('Данные для анализа не найдены.');
+        setLoading(false);
+        return;
+      }
+
+      if (!analyzeStartedRef.current) {
+        analyzeStartedRef.current = true;
+        setInfo('Оплата подтверждена. Запускаем анализ…');
+        setLoading(false);
+
         runAnalyze({
           a: { dob: dob1, age: aAge, birthPlace: aPlace, birthTime: aTime, accuracyLevel: aAcc },
           b: { dob: dob2, age: bAge, birthPlace: bPlace, birthTime: bTime, accuracyLevel: bAcc },
           selected: s,
         });
+        return;
       }
-    } catch (e: any) {
-      setErr(e?.message ? String(e.message) : 'NETWORK');
+
       setLoading(false);
+    } catch (e: any) {
+      if (!silent) {
+        setErr(e?.message ? String(e.message) : 'NETWORK');
+        setLoading(false);
+      }
     }
   };
 
@@ -347,7 +400,10 @@ export default function ReportClient() {
       }
 
       setText(String(j.text));
+      setInfo('');
       setLoading(false);
+
+      fetchFromDb(true);
     } catch (e: any) {
       setErr(e?.message ? String(e.message) : 'NETWORK');
       setLoading(false);
@@ -410,7 +466,7 @@ export default function ReportClient() {
     <main className="p">
       <header className="hero">
         <div className="title">РАЗБОР</div>
-        <div className="subtitle">{ready ? 'ОТЧЁТ ГОТОВ' : loading ? 'ПРОХОДИТ АНАЛИЗ...' : 'ЗАГРУЗКА...'}</div>
+        <div className="subtitle">{ready ? 'ОТЧЁТ ГОТОВ' : loading ? 'ПРОХОДИТ АНАЛИЗ...' : paid ? 'ОЖИДАЕМ ОТЧЁТ...' : 'ОЖИДАЕМ ОПЛАТУ...'}</div>
       </header>
 
       {toastOn ? (
@@ -424,7 +480,7 @@ export default function ReportClient() {
           <div className="label">Ошибка</div>
           <div className="warn">{err}</div>
           <div className="row">
-            <button type="button" className="btn" onClick={fetchFromDb} disabled={loading}>
+            <button type="button" className="btn" onClick={() => fetchFromDb(false)} disabled={loading}>
               Обновить
             </button>
             <button type="button" className="btn2" onClick={goBack}>
@@ -438,6 +494,9 @@ export default function ReportClient() {
         <section className="card">
           <div className="label">Статус</div>
           <div className="hint">{info}</div>
+          <div className="hint">
+            Оплата: <b>{paid ? 'подтверждена' : 'ожидается'}</b>
+          </div>
         </section>
       ) : null}
 
@@ -475,7 +534,6 @@ export default function ReportClient() {
 
         {text ? <pre className="out">{text}</pre> : null}
 
-        {/* ✅ как palm/report */}
         <div className="row">
           <button type="button" className="btn2" onClick={onCopy} disabled={!ready}>
             Скопировать
@@ -485,9 +543,8 @@ export default function ReportClient() {
           </button>
         </div>
 
-        {/* оставляем твои сервисные кнопки */}
         <div className="row">
-          <button type="button" className="btn" onClick={fetchFromDb} disabled={loading}>
+          <button type="button" className="btn" onClick={() => fetchFromDb(false)} disabled={loading}>
             Обновить из БД
           </button>
           <button type="button" className="btn2" onClick={goBack}>
@@ -496,13 +553,12 @@ export default function ReportClient() {
         </div>
 
         <div className="row">
-          <button type="button" className="btn3" onClick={forceAnalyze} disabled={loading}>
+          <button type="button" className="btn3" onClick={forceAnalyze} disabled={loading || !paid}>
             Пересоздать отчёт (OpenAI)
           </button>
         </div>
       </section>
 
-      {/* ✅ отдельная нижняя кнопка “Назад” */}
       <section className="bottom" aria-label="Назад">
         <button type="button" className="backBtn" onClick={goBack}>
           Назад
