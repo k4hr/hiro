@@ -138,10 +138,21 @@ export async function POST(req: Request) {
         astroTime2: time2 || null,
       },
       orderBy: { createdAt: 'desc' },
-      select: { id: true, status: true, createdAt: true, errorCode: true, errorText: true, input: true, text: true },
+      select: {
+        id: true,
+        status: true,
+        createdAt: true,
+        errorCode: true,
+        errorText: true,
+        input: true,
+        text: true,
+        pricingJson: true,
+      },
     });
 
     const hasText = Boolean(last?.status === 'READY' && last?.text);
+    const ykStatus = (last?.pricingJson as any)?.yookassa?.status;
+    const paid = String(ykStatus || '').toLowerCase() === 'succeeded';
 
     return NextResponse.json({
       ok: true,
@@ -157,9 +168,10 @@ export async function POST(req: Request) {
         : null,
       text: hasText ? String(last!.text) : '',
       hasText,
+      paid,
     });
   } catch (e: any) {
-    console.error(e);
+    console.error('[ASTRO_COMPAT_GET_ERROR]', e);
     return NextResponse.json({ ok: false, error: 'GET_FAILED', hint: String(e?.message || 'See server logs') }, { status: 500 });
   }
 }
