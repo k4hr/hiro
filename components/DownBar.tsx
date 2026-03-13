@@ -2,10 +2,10 @@
 'use client';
 
 import HiromantBlock from './DownBarUtil/hiromant';
+import KodSudbyBlock from './DownBarUtil/kod-sudby';
 
 /**
  * Общий DownBar — блок в конце страницы.
- * Без OnlyDown (файла нет — и не нужен).
  */
 export default function DownBar() {
   return (
@@ -13,6 +13,7 @@ export default function DownBar() {
       <section className="downWrap">
         <div className="downContent">
           <HiromantBlock />
+          <KodSudbyBlock />
         </div>
       </section>
 
