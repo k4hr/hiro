@@ -98,6 +98,10 @@ function cleanText(v: any, max = 96): string {
   return String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
 }
 
+function cleanTime(v: any): string {
+  return String(v ?? '').replace(/\s+/g, '').trim().slice(0, 8);
+}
+
 function safeNum(v: any): number | null {
   if (v === null || v === undefined) return null;
   const n = Number(v);
@@ -135,8 +139,8 @@ export async function POST(req: Request) {
     const place1 = cleanText(a?.birthPlace, 96);
     const place2 = cleanText(b?.birthPlace, 96);
 
-    const time1 = cleanText(a?.birthTime, 8);
-    const time2 = cleanText(b?.birthTime, 8);
+    const time1 = cleanTime(a?.birthTime);
+    const time2 = cleanTime(b?.birthTime);
 
     const acc1 = safeNum(a?.accuracyLevel);
     const acc2 = safeNum(b?.accuracyLevel);
@@ -166,7 +170,6 @@ export async function POST(req: Request) {
       select: { id: true },
     });
 
-    // ✅ HARD-CODED PRICES
     const modulePriceRub = 39;
     const summaryPriceRub = 49;
 
@@ -237,8 +240,10 @@ export async function POST(req: Request) {
 
           errorCode: null,
           errorText: null,
+          text: null,
         },
       });
+
       return NextResponse.json({ ok: true, reportId: draft.id, totalRub });
     }
 
@@ -269,7 +274,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ ok: true, reportId: created.id, totalRub });
   } catch (e: any) {
-    console.error(e);
+    console.error('[ASTRO_COMPAT_SUBMIT_ERROR]', e);
     return NextResponse.json({ ok: false, error: 'SUBMIT_FAILED', hint: String(e?.message || 'See server logs') }, { status: 500 });
   }
 }
