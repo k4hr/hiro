@@ -3,10 +3,8 @@
 
 import HiromantBlock from './DownBarUtil/hiromant';
 import KodSudbyBlock from './DownBarUtil/kod-sudby';
+import KartaNebaBlock from './DownBarUtil/karta-neba';
 
-/**
- * Общий DownBar — блок в конце страницы.
- */
 export default function DownBar() {
   return (
     <>
@@ -14,6 +12,7 @@ export default function DownBar() {
         <div className="downContent">
           <HiromantBlock />
           <KodSudbyBlock />
+          <KartaNebaBlock />
         </div>
       </section>
 
