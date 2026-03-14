@@ -1,7 +1,7 @@
 /* path: app/api/yookassa/create-payment/route.ts */
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { basicAuthHeader, getYookassaConfig, makeIdempotenceKey } from '@/lib/yookassa';
+import { makeIdempotenceKey } from '@/lib/yookassa';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -27,6 +27,10 @@ function getOrigin(req: Request) {
   return `${proto}://${usedHost}`;
 }
 
+function getRuProxyBase() {
+  return String(process.env.YOOKASSA_RU_PROXY_BASE || '').trim().replace(/\/+$/, '');
+}
+
 async function readJsonSafe(res: Response) {
   const text = await res.text().catch(() => '');
   if (!text) return null;
@@ -34,18 +38,16 @@ async function readJsonSafe(res: Response) {
   try {
     return JSON.parse(text);
   } catch {
-    return {
-      _raw: text,
-    };
+    return { _raw: text };
   }
 }
 
 export async function POST(req: Request) {
   try {
-    const cfg = getYookassaConfig();
-    if (!cfg) {
-      console.log('[YOOKASSA_CREATE_PAYMENT] missing config');
-      return NextResponse.json({ ok: false, error: 'YOOKASSA_ENV_MISSING' }, { status: 500 });
+    const proxyBase = getRuProxyBase();
+    if (!proxyBase) {
+      console.log('[YOOKASSA_CREATE_PAYMENT] missing YOOKASSA_RU_PROXY_BASE');
+      return NextResponse.json({ ok: false, error: 'YOOKASSA_RU_PROXY_BASE_MISSING' }, { status: 500 });
     }
 
     const body = (await req.json().catch(() => null)) as Body | null;
@@ -118,38 +120,39 @@ export async function POST(req: Request) {
         userId: report.userId,
         reportType: report.type,
       },
+      idempotenceKey: makeIdempotenceKey('yk'),
     };
 
-    console.log('[YOOKASSA_CREATE_PAYMENT_REQUEST]', {
+    console.log('[YOOKASSA_CREATE_PAYMENT_PROXY_REQUEST]', {
+      proxyUrl: `${proxyBase}/create-payment`,
       reportId: report.id,
       totalRub,
       returnUrl,
       description,
     });
 
-    const r = await fetch('https://api.yookassa.ru/v3/payments', {
+    const r = await fetch(`${proxyBase}/create-payment`, {
       method: 'POST',
       headers: {
-        Authorization: basicAuthHeader(cfg),
         'Content-Type': 'application/json',
-        'Idempotence-Key': makeIdempotenceKey('yk'),
       },
       body: JSON.stringify(payload),
+      cache: 'no-store',
     });
 
     const data = await readJsonSafe(r);
 
-    console.log('[YOOKASSA_CREATE_PAYMENT_RESPONSE]', {
+    console.log('[YOOKASSA_CREATE_PAYMENT_PROXY_RESPONSE]', {
       status: r.status,
       ok: r.ok,
       data,
     });
 
-    if (!r.ok) {
+    if (!r.ok || !(data as any)?.ok) {
       return NextResponse.json(
         {
           ok: false,
-          error: 'YOOKASSA_ERROR',
+          error: 'YOOKASSA_PROXY_ERROR',
           status: r.status,
           details: data,
         },
@@ -157,8 +160,9 @@ export async function POST(req: Request) {
       );
     }
 
-    const paymentId = String((data as any)?.id ?? '').trim();
-    const confirmationUrl = String((data as any)?.confirmation?.confirmation_url ?? '').trim();
+    const paymentId = String((data as any)?.paymentId ?? '').trim();
+    const confirmationUrl = String((data as any)?.confirmationUrl ?? '').trim();
+    const paymentStatus = String((data as any)?.status ?? 'pending').trim();
 
     if (!paymentId) {
       return NextResponse.json(
@@ -196,10 +200,13 @@ export async function POST(req: Request) {
             yookassa: {
               ...(prev?.yookassa ?? {}),
               paymentId,
-              status: String((data as any)?.status ?? 'pending'),
+              status: paymentStatus || 'pending',
               returnUrl,
               createdAt: new Date().toISOString(),
-              amount: (data as any)?.amount ?? null,
+              amount: {
+                value: totalRub.toFixed(2),
+                currency: 'RUB',
+              },
             },
           },
         },
