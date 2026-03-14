@@ -57,7 +57,6 @@ type DbReport = {
   errorCode: string | null;
   errorText: string | null;
   input: any | null;
-  pricingJson?: any | null;
 };
 
 type GetResp =
@@ -158,38 +157,6 @@ async function copyToClipboard(text: string): Promise<boolean> {
     } catch {
       return false;
     }
-  }
-}
-
-function extractPaymentId(report: DbReport | null): string {
-  try {
-    const id = String(report?.pricingJson?.yookassa?.paymentId ?? '').trim();
-    return id;
-  } catch {
-    return '';
-  }
-}
-
-async function fetchYookassaPayment(paymentId: string): Promise<{ paid: boolean; status: string }> {
-  try {
-    if (!paymentId) return { paid: false, status: '' };
-
-    const res = await fetch(`/api/yookassa/get-payment?paymentId=${encodeURIComponent(paymentId)}`, {
-      method: 'GET',
-      cache: 'no-store',
-    });
-
-    const j = (await res.json().catch(() => null)) as any;
-    if (!res.ok || !j || j.ok !== true) {
-      return { paid: false, status: String(j?.status ?? '') };
-    }
-
-    const status = String(j?.status ?? '').trim();
-    const paid = j?.paid === true || status === 'succeeded';
-
-    return { paid, status };
-  } catch {
-    return { paid: false, status: '' };
   }
 }
 
@@ -306,18 +273,7 @@ export default function ReportClient() {
       const selFromDb = rep?.input ? safeSelectedFromDb(rep.input) : null;
       if (selFromDb) setDbSelected(selFromDb);
 
-      let isPaid = Boolean(j.paid === true);
-
-      if (!isPaid) {
-        const paymentId = extractPaymentId(rep);
-        if (paymentId) {
-          const paymentState = await fetchYookassaPayment(paymentId);
-          if (paymentState.paid) {
-            isPaid = true;
-          }
-        }
-      }
-
+      const isPaid = Boolean(j.paid === true);
       setPaid(isPaid);
 
       if (j.hasText && j.text) {
@@ -413,32 +369,6 @@ export default function ReportClient() {
     }
   };
 
-  const forceAnalyze = () => {
-    haptic('medium');
-
-    const sel = payload?.selected ?? dbSelected;
-    const repInput = dbReport?.input ?? null;
-    const age = payload?.age ?? (repInput?.age ?? null);
-
-    if (!dob) {
-      setErr('NO_DOB');
-      return;
-    }
-    if (!sel) {
-      setErr('NO_SELECTED_IN_DB');
-      setInfo('Нет сохранённых пунктов. Вернись назад и нажми “Продолжить” ещё раз.');
-      return;
-    }
-    if (!paid) {
-      setErr('PAYMENT_NOT_CONFIRMED');
-      setInfo('Сначала должна подтвердиться оплата.');
-      return;
-    }
-
-    analyzeStartedRef.current = true;
-    runAnalyze({ dob, age, selected: sel });
-  };
-
   const goBack = () => {
     haptic('light');
     try {
@@ -474,7 +404,7 @@ export default function ReportClient() {
         <section className="card">
           <div className="label">Ошибка</div>
           <div className="warn">{err}</div>
-          <div className="row">
+          <div className="actionsGrid">
             <button type="button" className="btn" onClick={() => fetchFromDb(false)} disabled={loading}>
               Обновить
             </button>
@@ -522,7 +452,7 @@ export default function ReportClient() {
 
         {text ? <pre className="out">{text}</pre> : null}
 
-        <div className="row">
+        <div className="actionsGrid">
           <button type="button" className="btn2" onClick={onCopy} disabled={!ready}>
             Скопировать
           </button>
@@ -531,18 +461,9 @@ export default function ReportClient() {
           </button>
         </div>
 
-        <div className="row">
+        <div className="actionsSingle">
           <button type="button" className="btn" onClick={() => fetchFromDb(false)} disabled={loading}>
-            Обновить из БД
-          </button>
-          <button type="button" className="btn2" onClick={goBack}>
-            Назад
-          </button>
-        </div>
-
-        <div className="row">
-          <button type="button" className="btn3" onClick={forceAnalyze} disabled={loading}>
-            Пересоздать отчёт (OpenAI)
+            Обновить
           </button>
         </div>
       </section>
@@ -562,6 +483,7 @@ export default function ReportClient() {
           align-items: center;
           gap: 12px;
         }
+
         .p > * {
           width: 100%;
           max-width: 520px;
@@ -679,22 +601,31 @@ export default function ReportClient() {
           word-break: break-word;
         }
 
-        .row {
-          display: flex;
+        .actionsGrid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 10px;
+          margin-top: 4px;
+        }
+
+        .actionsSingle {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr);
           gap: 10px;
           margin-top: 4px;
         }
 
         .btn,
-        .btn2,
-        .btn3 {
-          flex: 1;
+        .btn2 {
+          width: 100%;
+          min-width: 0;
           border-radius: 999px;
           padding: 12px 14px;
           font-size: 14px;
           font-weight: 950;
           cursor: pointer;
           -webkit-tap-highlight-color: transparent;
+          text-align: center;
         }
 
         .btn {
@@ -705,8 +636,7 @@ export default function ReportClient() {
         }
 
         .btn:disabled,
-        .btn2:disabled,
-        .btn3:disabled {
+        .btn2:disabled {
           opacity: 0.55;
           cursor: not-allowed;
           box-shadow: none;
@@ -718,15 +648,8 @@ export default function ReportClient() {
           background: rgba(255, 255, 255, 0.03);
         }
 
-        .btn3 {
-          border: 1px solid rgba(233, 236, 255, 0.14);
-          color: rgba(233, 236, 255, 0.92);
-          background: rgba(255, 255, 255, 0.02);
-        }
-
         .btn:active,
-        .btn2:active,
-        .btn3:active {
+        .btn2:active {
           transform: scale(0.99);
           opacity: 0.92;
         }
@@ -755,6 +678,12 @@ export default function ReportClient() {
         .backBtn:active {
           transform: scale(0.99);
           opacity: 0.92;
+        }
+
+        @media (max-width: 420px) {
+          .actionsGrid {
+            grid-template-columns: 1fr;
+          }
         }
       `}</style>
     </main>
