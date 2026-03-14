@@ -139,8 +139,8 @@ export async function POST(req: Request) {
     });
 
     const hasText = Boolean(last?.status === 'READY' && last?.text);
-    const ykStatus = (last?.pricingJson as any)?.yookassa?.status;
-    const paid = String(ykStatus || '').toLowerCase() === 'succeeded';
+    const ykStatus = String((last?.pricingJson as any)?.yookassa?.status ?? '').toLowerCase();
+    const paid = ykStatus === 'succeeded';
 
     return NextResponse.json({
       ok: true,
@@ -152,6 +152,7 @@ export async function POST(req: Request) {
             errorCode: last.errorCode,
             errorText: last.errorText,
             input: last.input,
+            pricingJson: last.pricingJson ?? null,
           }
         : null,
       text: hasText ? String(last!.text) : '',
@@ -160,6 +161,9 @@ export async function POST(req: Request) {
     });
   } catch (e: any) {
     console.error(e);
-    return NextResponse.json({ ok: false, error: 'GET_FAILED', hint: String(e?.message || 'See server logs') }, { status: 500 });
+    return NextResponse.json(
+      { ok: false, error: 'GET_FAILED', hint: String(e?.message || 'See server logs') },
+      { status: 500 }
+    );
   }
 }
