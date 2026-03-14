@@ -57,6 +57,7 @@ type DbReport = {
   errorCode: string | null;
   errorText: string | null;
   input: any | null;
+  pricingJson?: any | null;
 };
 
 type GetResp =
@@ -157,6 +158,38 @@ async function copyToClipboard(text: string): Promise<boolean> {
     } catch {
       return false;
     }
+  }
+}
+
+function extractPaymentId(report: DbReport | null): string {
+  try {
+    const id = String(report?.pricingJson?.yookassa?.paymentId ?? '').trim();
+    return id;
+  } catch {
+    return '';
+  }
+}
+
+async function fetchYookassaPayment(paymentId: string): Promise<{ paid: boolean; status: string }> {
+  try {
+    if (!paymentId) return { paid: false, status: '' };
+
+    const res = await fetch(`/api/yookassa/get-payment?paymentId=${encodeURIComponent(paymentId)}`, {
+      method: 'GET',
+      cache: 'no-store',
+    });
+
+    const j = (await res.json().catch(() => null)) as any;
+    if (!res.ok || !j || j.ok !== true) {
+      return { paid: false, status: String(j?.status ?? '') };
+    }
+
+    const status = String(j?.status ?? '').trim();
+    const paid = j?.paid === true || status === 'succeeded';
+
+    return { paid, status };
+  } catch {
+    return { paid: false, status: '' };
   }
 }
 
@@ -273,7 +306,18 @@ export default function ReportClient() {
       const selFromDb = rep?.input ? safeSelectedFromDb(rep.input) : null;
       if (selFromDb) setDbSelected(selFromDb);
 
-      const isPaid = Boolean(j.paid === true);
+      let isPaid = Boolean(j.paid === true);
+
+      if (!isPaid) {
+        const paymentId = extractPaymentId(rep);
+        if (paymentId) {
+          const paymentState = await fetchYookassaPayment(paymentId);
+          if (paymentState.paid) {
+            isPaid = true;
+          }
+        }
+      }
+
       setPaid(isPaid);
 
       if (j.hasText && j.text) {
