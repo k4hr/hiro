@@ -28,7 +28,13 @@ function getOrigin(req: Request) {
 }
 
 function getRuProxyBase() {
-  return String(process.env.YOOKASSA_RU_PROXY_BASE || '').trim().replace(/\/+$/, '');
+  return String(process.env.YOOKASSA_RU_PROXY_BASE || '')
+    .trim()
+    .replace(/\/+$/, '');
+}
+
+function getReceiptEmail() {
+  return String(process.env.YOOKASSA_RECEIPT_EMAIL || '').trim();
 }
 
 async function readJsonSafe(res: Response) {
@@ -47,7 +53,19 @@ export async function POST(req: Request) {
     const proxyBase = getRuProxyBase();
     if (!proxyBase) {
       console.log('[YOOKASSA_CREATE_PAYMENT] missing YOOKASSA_RU_PROXY_BASE');
-      return NextResponse.json({ ok: false, error: 'YOOKASSA_RU_PROXY_BASE_MISSING' }, { status: 500 });
+      return NextResponse.json(
+        { ok: false, error: 'YOOKASSA_RU_PROXY_BASE_MISSING' },
+        { status: 500 }
+      );
+    }
+
+    const receiptEmail = getReceiptEmail();
+    if (!receiptEmail) {
+      console.log('[YOOKASSA_CREATE_PAYMENT] missing YOOKASSA_RECEIPT_EMAIL');
+      return NextResponse.json(
+        { ok: false, error: 'YOOKASSA_RECEIPT_EMAIL_MISSING' },
+        { status: 500 }
+      );
     }
 
     const body = (await req.json().catch(() => null)) as Body | null;
@@ -120,6 +138,24 @@ export async function POST(req: Request) {
         userId: report.userId,
         reportType: report.type,
       },
+      receipt: {
+        customer: {
+          email: receiptEmail,
+        },
+        items: [
+          {
+            description,
+            quantity: '1.00',
+            amount: {
+              value: totalRub.toFixed(2),
+              currency: 'RUB',
+            },
+            vat_code: 1,
+            payment_mode: 'full_payment',
+            payment_subject: 'service',
+          },
+        ],
+      },
       idempotenceKey: makeIdempotenceKey('yk'),
     };
 
@@ -129,6 +165,7 @@ export async function POST(req: Request) {
       totalRub,
       returnUrl,
       description,
+      receiptEmail,
     });
 
     const r = await fetch(`${proxyBase}/create-payment`, {
@@ -149,12 +186,16 @@ export async function POST(req: Request) {
     });
 
     if (!r.ok || !(data as any)?.ok) {
+      console.log('[YOOKASSA_CREATE_PAYMENT_PROXY_ERROR_DETAILS]', data);
+
       return NextResponse.json(
         {
           ok: false,
           error: 'YOOKASSA_PROXY_ERROR',
           status: r.status,
           details: data,
+          proxyError: (data as any)?.error ?? null,
+          proxyRaw: (data as any)?.raw ?? null,
         },
         { status: 400 }
       );
@@ -207,6 +248,7 @@ export async function POST(req: Request) {
                 value: totalRub.toFixed(2),
                 currency: 'RUB',
               },
+              receiptEmail,
             },
           },
         },
