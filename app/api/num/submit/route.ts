@@ -13,6 +13,11 @@ type TgUser = {
   last_name: string | null;
 };
 
+type OptionKey = 'LIFE_PATH' | 'BIRTHDAY' | 'DIGITS' | 'PERIODS' | 'YEAR12' | 'SUMMARY';
+
+const PAID_KEYS: OptionKey[] = ['LIFE_PATH', 'BIRTHDAY', 'DIGITS', 'PERIODS', 'YEAR12'];
+const SUMMARY_KEY: OptionKey = 'SUMMARY';
+
 function envClean(name: string) {
   return String(process.env[name] ?? '').replace(/[\r\n]/g, '').trim();
 }
@@ -103,6 +108,22 @@ function safeNum(v: any): number | null {
   return n;
 }
 
+function normalizeSelected(v: any): Record<OptionKey, boolean> {
+  const src = v && typeof v === 'object' ? v : {};
+  return {
+    LIFE_PATH: src.LIFE_PATH === true,
+    BIRTHDAY: src.BIRTHDAY === true,
+    DIGITS: src.DIGITS === true,
+    PERIODS: src.PERIODS === true,
+    YEAR12: src.YEAR12 === true,
+    SUMMARY: true,
+  };
+}
+
+function countPaidSelected(selected: Record<OptionKey, boolean>) {
+  return PAID_KEYS.filter((k) => selected[k] === true).length;
+}
+
 export async function POST(req: Request) {
   try {
     const botToken = envClean('TELEGRAM_BOT_TOKEN');
@@ -116,7 +137,11 @@ export async function POST(req: Request) {
     const dob = String(body.dob || '').trim();
 
     const age = safeNum(body.age);
-    const selected = body.selected && typeof body.selected === 'object' ? body.selected : {};
+    const selected = normalizeSelected(body.selected);
+
+    const clientPriceRub = safeNum(body.priceRub);
+    const clientSummaryPriceRub = safeNum(body.summaryPriceRub);
+    const clientTotalRub = safeNum(body.totalRub);
 
     if (!initData) return NextResponse.json({ ok: false, error: 'NO_INIT_DATA' }, { status: 401 });
     if (mode !== 'DATE') return NextResponse.json({ ok: false, error: 'BAD_MODE' }, { status: 400 });
@@ -145,8 +170,28 @@ export async function POST(req: Request) {
       select: { id: true },
     });
 
-    const totalRub = 49;
-    const priceRub = 0;
+    const priceRub = Number.isFinite(clientPriceRub as number) && (clientPriceRub as number) > 0 ? Number(clientPriceRub) : 39;
+    const summaryPriceRub =
+      Number.isFinite(clientSummaryPriceRub as number) && (clientSummaryPriceRub as number) > 0
+        ? Number(clientSummaryPriceRub)
+        : 49;
+
+    const selectedCountPaid = countPaidSelected(selected);
+    const totalRub = selectedCountPaid * priceRub + summaryPriceRub;
+
+    if (!Number.isFinite(totalRub) || totalRub <= 0) {
+      return NextResponse.json({ ok: false, error: 'BAD_TOTAL_RUB' }, { status: 400 });
+    }
+
+    if (clientTotalRub !== null && Number(clientTotalRub) !== totalRub) {
+      console.log('[NUM_SUBMIT_TOTAL_MISMATCH]', {
+        clientTotalRub,
+        serverTotalRub: totalRub,
+        selectedCountPaid,
+        priceRub,
+        summaryPriceRub,
+      });
+    }
 
     const inputJson = {
       mode: 'DATE',
@@ -154,9 +199,15 @@ export async function POST(req: Request) {
       age,
       selected,
       clientPricing: {
-        totalRub: safeNum(body.totalRub),
-        priceRub: safeNum(body.priceRub),
-        summaryPriceRub: safeNum(body.summaryPriceRub),
+        totalRub: clientTotalRub,
+        priceRub: clientPriceRub,
+        summaryPriceRub: clientSummaryPriceRub,
+      },
+      serverPricing: {
+        selectedCountPaid,
+        priceRub,
+        summaryPriceRub,
+        totalRub,
       },
       savedAt: new Date().toISOString(),
     };
@@ -164,6 +215,9 @@ export async function POST(req: Request) {
     const pricingJson = {
       kind: 'NUM_DATE',
       totalRub,
+      priceRub,
+      summaryPriceRub,
+      selectedCountPaid,
       selected,
     };
 
@@ -197,7 +251,12 @@ export async function POST(req: Request) {
         },
       });
 
-      return NextResponse.json({ ok: true, reportId: draft.id, totalRub });
+      return NextResponse.json({
+        ok: true,
+        reportId: draft.id,
+        totalRub,
+        selectedCountPaid,
+      });
     }
 
     const created = await prisma.report.create({
@@ -215,9 +274,17 @@ export async function POST(req: Request) {
       select: { id: true },
     });
 
-    return NextResponse.json({ ok: true, reportId: created.id, totalRub });
+    return NextResponse.json({
+      ok: true,
+      reportId: created.id,
+      totalRub,
+      selectedCountPaid,
+    });
   } catch (e: any) {
     console.error(e);
-    return NextResponse.json({ ok: false, error: 'SUBMIT_FAILED', hint: String(e?.message || 'See server logs') }, { status: 500 });
+    return NextResponse.json(
+      { ok: false, error: 'SUBMIT_FAILED', hint: String(e?.message || 'See server logs') },
+      { status: 500 }
+    );
   }
 }
