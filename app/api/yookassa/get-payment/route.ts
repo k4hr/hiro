@@ -5,7 +5,9 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 function getRuProxyBase() {
-  return String(process.env.YOOKASSA_RU_PROXY_BASE || '').trim().replace(/\/+$/, '');
+  return String(process.env.YOOKASSA_RU_PROXY_BASE || '')
+    .trim()
+    .replace(/\/+$/, '');
 }
 
 async function readJsonSafe(res: Response) {
@@ -23,7 +25,10 @@ export async function GET(req: Request) {
   try {
     const proxyBase = getRuProxyBase();
     if (!proxyBase) {
-      return NextResponse.json({ ok: false, error: 'YOOKASSA_RU_PROXY_BASE_MISSING' }, { status: 500 });
+      return NextResponse.json(
+        { ok: false, error: 'YOOKASSA_RU_PROXY_BASE_MISSING' },
+        { status: 500 }
+      );
     }
 
     const { searchParams } = new URL(req.url);
