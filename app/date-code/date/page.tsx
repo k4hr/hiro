@@ -38,6 +38,25 @@ function getInitDataNow(): string {
   return String(getCookie('tg_init_data') || '').trim();
 }
 
+function openPaymentUrl(url: string) {
+  const clean = String(url || '').trim();
+  if (!clean) return;
+
+  try {
+    window.location.assign(clean);
+    return;
+  } catch {}
+
+  try {
+    window.location.href = clean;
+    return;
+  } catch {}
+
+  try {
+    tg()?.openLink?.(clean);
+  } catch {}
+}
+
 const PRICE_RUB = 39;
 const SUMMARY_PRICE_RUB = 49;
 
@@ -235,19 +254,15 @@ export default function DateCodeDatePage() {
       });
 
       const pJson = (await pRes.json().catch(() => null)) as any;
-      const confirmationUrl = String(pJson?.confirmationUrl ?? '');
+      const paymentUrl = String(pJson?.url || pJson?.confirmationUrl || '').trim();
 
-      if (!pRes.ok || !pJson || pJson.ok !== true || !confirmationUrl) {
+      if (!pRes.ok || !pJson || pJson.ok !== true || !paymentUrl) {
         setSubmitting(false);
         setSubmitErr(pJson?.error ? String(pJson.error) : `PAYMENT_CREATE_FAILED(${pRes.status})`);
         return;
       }
 
-      try {
-        tg()?.openLink?.(confirmationUrl);
-      } catch {
-        window.location.href = confirmationUrl;
-      }
+      openPaymentUrl(paymentUrl);
     } catch (e: any) {
       setSubmitting(false);
       setSubmitErr(e?.message ? String(e.message) : 'NETWORK_ERROR');
