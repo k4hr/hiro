@@ -261,8 +261,10 @@ export async function POST(req: Request) {
       ok: true,
       reportId: report.id,
       paymentId,
+      url: confirmationUrl,
       confirmationUrl,
       returnUrl,
+      openInTelegram: true,
     });
   } catch (e: any) {
     console.log('[YOOKASSA_CREATE_PAYMENT_FATAL]', String(e?.message ?? e));
