@@ -41,11 +41,11 @@ function getInitDataNow(): string {
 type Item = {
   id: string;
   type: 'PALM' | 'NUM' | 'ASTRO' | 'SYNTH';
+  status: string;
   createdAt: string;
   updatedAt: string;
 
   numMode?: 'DATE' | 'COMBO' | 'COMPAT' | null;
-
   astroMode?: 'CHART' | 'COMPAT' | null;
 
   input?: any | null;
@@ -58,7 +58,13 @@ type Resp =
 function fmtDate(iso: string) {
   try {
     const d = new Date(iso);
-    return d.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    return d.toLocaleString('ru-RU', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
   } catch {
     return iso;
   }
@@ -66,22 +72,88 @@ function fmtDate(iso: string) {
 
 function titleFor(it: Item) {
   if (it.type === 'PALM') return 'Хиромант';
+
   if (it.type === 'NUM') {
     if (it.numMode === 'COMPAT') return 'Код судьбы · Совместимость';
     if (it.numMode === 'COMBO') return 'Код судьбы · Дата + имя';
     return 'Код судьбы · Дата рождения';
   }
+
   if (it.type === 'ASTRO') {
     if (it.astroMode === 'COMPAT') return 'Астро-совместимость';
     return 'Карта неба';
   }
+
   return 'Отчёт';
+}
+
+function statusLabel(status: string) {
+  const s = String(status || '').toUpperCase();
+
+  if (s === 'READY') return 'Готов';
+  if (s === 'FAILED') return 'Ошибка';
+  if (s === 'DRAFT') return 'Готовится';
+
+  return s || 'В работе';
+}
+
+function statusClass(status: string) {
+  const s = String(status || '').toUpperCase();
+
+  if (s === 'READY') return 'is-ready';
+  if (s === 'FAILED') return 'is-failed';
+  return 'is-pending';
 }
 
 function subFor(it: Item) {
   const created = fmtDate(it.createdAt);
-  const dob = String(it?.input?.dob || it?.input?.a?.dob || '').trim();
-  if (dob) return `${created} · ${dob}`;
+
+  if (it.type === 'NUM') {
+    if (it.numMode === 'DATE') {
+      const dob = String(it?.input?.dob || '').trim();
+      return dob ? `${created} · ${dob}` : created;
+    }
+
+    if (it.numMode === 'COMBO') {
+      const dob = String(it?.input?.dob || '').trim();
+      const name = String(it?.input?.name || '').trim();
+      if (dob && name) return `${created} · ${name} · ${dob}`;
+      if (dob) return `${created} · ${dob}`;
+      if (name) return `${created} · ${name}`;
+      return created;
+    }
+
+    if (it.numMode === 'COMPAT') {
+      const name1 = String(it?.input?.name1 || '').trim();
+      const dob1 = String(it?.input?.dob1 || '').trim();
+      const name2 = String(it?.input?.name2 || '').trim();
+      const dob2 = String(it?.input?.dob2 || '').trim();
+
+      const left = [name1, dob1].filter(Boolean).join(' · ');
+      const right = [name2, dob2].filter(Boolean).join(' · ');
+
+      if (left && right) return `${created} · ${left} ↔ ${right}`;
+      return created;
+    }
+  }
+
+  if (it.type === 'ASTRO') {
+    if (it.astroMode === 'CHART') {
+      const dob = String(it?.input?.dob || '').trim();
+      const city = String(it?.input?.city || '').trim();
+      if (dob && city) return `${created} · ${dob} · ${city}`;
+      if (dob) return `${created} · ${dob}`;
+      return created;
+    }
+
+    if (it.astroMode === 'COMPAT') {
+      const aName = String(it?.input?.a?.name || '').trim();
+      const bName = String(it?.input?.b?.name || '').trim();
+      if (aName && bName) return `${created} · ${aName} ↔ ${bName}`;
+      return created;
+    }
+  }
+
   return created;
 }
 
@@ -117,6 +189,7 @@ export default function ReportsPage() {
       });
 
       const j = (await res.json().catch(() => null)) as Resp | null;
+
       if (!res.ok || !j || (j as any).ok !== true) {
         setErr((j as any)?.error ? String((j as any).error) : `LIST_FAILED(${res.status})`);
         setLoading(false);
@@ -147,7 +220,7 @@ export default function ReportsPage() {
     <main className="home">
       <header className="hero" aria-label="Заголовок">
         <div className="title">МОИ ОТЧЁТЫ</div>
-        <div className="subtitle">сохранённые разборы</div>
+        <div className="subtitle">все оплаченные разборы</div>
       </header>
 
       {err ? (
@@ -175,18 +248,25 @@ export default function ReportsPage() {
       {empty ? (
         <section className="card" aria-label="Пусто">
           <div className="label">Пока пусто</div>
-          <div className="hint">Сделайте любой разбор — и он появится здесь.</div>
+          <div className="hint">Оплаченные разборы появятся здесь.</div>
         </section>
       ) : null}
 
       {items.length ? (
         <section className="grid" aria-label="Список отчётов">
           {items.map((it) => (
-            <button key={it.id} type="button" className="cardx" onClick={() => go(`/reports/${encodeURIComponent(it.id)}`)}>
-              <div className="cardText">
+            <button
+              key={it.id}
+              type="button"
+              className="cardx"
+              onClick={() => go(`/reports/${encodeURIComponent(it.id)}`)}
+            >
+              <div className="cardHead">
                 <div className="cardTitle">{titleFor(it)}</div>
-                <div className="cardSub">{subFor(it)}</div>
+                <div className={`statusBadge ${statusClass(it.status)}`}>{statusLabel(it.status)}</div>
               </div>
+
+              <div className="cardSub">{subFor(it)}</div>
             </button>
           ))}
         </section>
@@ -238,23 +318,12 @@ export default function ReportsPage() {
           font-size: 26px;
           line-height: 1.05;
           margin: 0 0 6px;
-
           color: transparent;
-          background: linear-gradient(
-            115deg,
-            #fff3cf 0%,
-            #d2b35b 18%,
-            #f6e7b0 36%,
-            #b8892a 54%,
-            #fff3cf 72%,
-            #d2b35b 100%
-          );
+          background: linear-gradient(115deg, #fff3cf 0%, #d2b35b 18%, #f6e7b0 36%, #b8892a 54%, #fff3cf 72%, #d2b35b 100%);
           background-size: 220% 100%;
           -webkit-background-clip: text;
           background-clip: text;
-
           text-shadow: 0 1px 0 rgba(255, 255, 255, 0.06), 0 18px 44px rgba(0, 0, 0, 0.65);
-
           animation: shimmer 3.2s ease-in-out infinite;
           will-change: background-position;
         }
@@ -296,15 +365,17 @@ export default function ReportsPage() {
           backdrop-filter: blur(14px) saturate(140%);
           -webkit-backdrop-filter: blur(14px) saturate(140%);
           display: flex;
-          align-items: center;
+          flex-direction: column;
+          align-items: stretch;
           justify-content: center;
           cursor: pointer;
           -webkit-tap-highlight-color: transparent;
           transition: transform 0.08s ease, opacity 0.08s ease, border-color 0.12s ease, background 0.12s ease;
           color: inherit;
-          text-align: center;
+          text-align: left;
           position: relative;
           overflow: hidden;
+          gap: 8px;
         }
 
         .cardx::before {
@@ -326,23 +397,58 @@ export default function ReportsPage() {
           opacity: 0.92;
         }
 
-        .cardText {
-          width: 100%;
+        .cardHead {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 12px;
         }
 
         .cardTitle {
+          min-width: 0;
+          flex: 1;
           font-size: 16px;
           font-weight: 900;
           color: var(--text);
-          line-height: 1.1;
+          line-height: 1.15;
           letter-spacing: -0.01em;
         }
 
         .cardSub {
-          margin-top: 5px;
           font-size: 12px;
           color: rgba(233, 236, 255, 0.62);
-          line-height: 1.25;
+          line-height: 1.35;
+          word-break: break-word;
+        }
+
+        .statusBadge {
+          flex: 0 0 auto;
+          padding: 6px 10px;
+          border-radius: 999px;
+          font-size: 11px;
+          font-weight: 900;
+          letter-spacing: 0.04em;
+          text-transform: uppercase;
+          border: 1px solid rgba(233, 236, 255, 0.14);
+          white-space: nowrap;
+        }
+
+        .statusBadge.is-ready {
+          color: rgba(170, 255, 196, 0.95);
+          background: rgba(50, 140, 90, 0.16);
+          border-color: rgba(120, 220, 160, 0.26);
+        }
+
+        .statusBadge.is-pending {
+          color: rgba(255, 228, 170, 0.96);
+          background: rgba(176, 122, 24, 0.16);
+          border-color: rgba(210, 179, 91, 0.28);
+        }
+
+        .statusBadge.is-failed {
+          color: rgba(255, 184, 184, 0.96);
+          background: rgba(160, 60, 60, 0.16);
+          border-color: rgba(255, 120, 120, 0.24);
         }
 
         .card {
@@ -441,6 +547,17 @@ export default function ReportsPage() {
         .backBtn:active {
           transform: scale(0.99);
           opacity: 0.92;
+        }
+
+        @media (max-width: 420px) {
+          .cardHead {
+            flex-direction: column;
+            align-items: flex-start;
+          }
+
+          .statusBadge {
+            white-space: normal;
+          }
         }
       `}</style>
     </main>
