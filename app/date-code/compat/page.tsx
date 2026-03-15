@@ -40,14 +40,9 @@ function openPaymentUrl(url: string) {
   const clean = String(url || '').trim();
   if (!clean) return;
 
-  try {
-    const w = tg();
-    if (w?.openLink) {
-      w.openLink(clean);
-      return;
-    }
-  } catch {}
-
+  // ВАЖНО:
+  // tg().openLink(...) обычно выпинывает наружу в браузер.
+  // Для открытия страницы оплаты внутри Telegram Mini App нужен обычный переход.
   try {
     window.location.assign(clean);
     return;
