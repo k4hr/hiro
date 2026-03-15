@@ -124,11 +124,20 @@ function optionTitle(k: OptionKey) {
 }
 
 function pickSelected(selected: Record<string, any> | null | undefined): OptionKey[] {
-  const paid: OptionKey[] = ['COMPAT_RESONANCE', 'COMPAT_GOOD', 'COMPAT_BAD', 'COMPAT_TALKS', 'COMPAT_MONEY_HOME'];
+  const paid: OptionKey[] = [
+    'COMPAT_RESONANCE',
+    'COMPAT_GOOD',
+    'COMPAT_BAD',
+    'COMPAT_TALKS',
+    'COMPAT_MONEY_HOME',
+  ];
+
   const out: OptionKey[] = [];
 
   if (selected && typeof selected === 'object') {
-    for (const k of paid) if ((selected as any)[k] === true) out.push(k);
+    for (const k of paid) {
+      if ((selected as any)[k] === true) out.push(k);
+    }
   }
 
   out.push('COMPAT_FORMULA');
@@ -191,7 +200,10 @@ function buildPrompt(args: {
 async function callOpenAI(args: { apiKey: string; prompt: string }) {
   const res = await fetch('https://api.openai.com/v1/responses', {
     method: 'POST',
-    headers: { Authorization: `Bearer ${args.apiKey}`, 'Content-Type': 'application/json' },
+    headers: {
+      Authorization: `Bearer ${args.apiKey}`,
+      'Content-Type': 'application/json',
+    },
     body: JSON.stringify({
       model: 'gpt-5.2',
       reasoning: { effort: 'low' },
@@ -205,17 +217,21 @@ async function callOpenAI(args: { apiKey: string; prompt: string }) {
       (j?.error?.message ? String(j.error.message) : '') ||
       (j?.error ? JSON.stringify(j.error) : '') ||
       `OPENAI_FAILED(${res.status})`;
+
     return { ok: false as const, error: msg, raw: j };
   }
 
   let outText = '';
+
   if (typeof j.output_text === 'string' && j.output_text.trim()) {
     outText = j.output_text.trim();
   } else if (Array.isArray(j.output)) {
     for (const item of j.output) {
       if (item?.type === 'message' && Array.isArray(item.content)) {
         for (const c of item.content) {
-          if (c?.type === 'output_text' && typeof c.text === 'string') outText += c.text;
+          if (c?.type === 'output_text' && typeof c.text === 'string') {
+            outText += c.text;
+          }
         }
       }
     }
@@ -250,13 +266,19 @@ export async function POST(req: Request) {
 
   try {
     const apiKey = envClean('OPENAI_API_KEY');
-    if (!apiKey) return NextResponse.json({ ok: false, error: 'NO_OPENAI_API_KEY' }, { status: 500 });
+    if (!apiKey) {
+      return NextResponse.json({ ok: false, error: 'NO_OPENAI_API_KEY' }, { status: 500 });
+    }
 
     const botToken = envClean('TELEGRAM_BOT_TOKEN');
-    if (!botToken) return NextResponse.json({ ok: false, error: 'NO_BOT_TOKEN' }, { status: 500 });
+    if (!botToken) {
+      return NextResponse.json({ ok: false, error: 'NO_BOT_TOKEN' }, { status: 500 });
+    }
 
     const body = (await req.json().catch(() => null)) as any;
-    if (!body) return NextResponse.json({ ok: false, error: 'BAD_JSON' }, { status: 400 });
+    if (!body) {
+      return NextResponse.json({ ok: false, error: 'BAD_JSON' }, { status: 400 });
+    }
 
     const initData = String(body.initData || '').trim();
     reportId = String(body.reportId || '').trim() || null;
@@ -287,7 +309,10 @@ export async function POST(req: Request) {
       where: { telegramId },
       select: { id: true },
     });
-    if (!user) return NextResponse.json({ ok: false, error: 'NO_USER' }, { status: 404 });
+
+    if (!user) {
+      return NextResponse.json({ ok: false, error: 'NO_USER' }, { status: 404 });
+    }
 
     const selectedFixed = { ...(selectedFromReq ?? {}), COMPAT_FORMULA: true };
     const wantedList = pickSelected(selectedFixed);
@@ -350,7 +375,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: 'PAYMENT_NOT_CONFIRMED' }, { status: 402 });
     }
 
-    if (String(currentReport.status || '').toUpperCase() === 'READY' && typeof currentReport.text === 'string' && currentReport.text.trim()) {
+    if (
+      String(currentReport.status || '').toUpperCase() === 'READY' &&
+      typeof currentReport.text === 'string' &&
+      currentReport.text.trim()
+    ) {
       return NextResponse.json({ ok: true, text: currentReport.text, cached: true });
     }
 
@@ -366,11 +395,17 @@ export async function POST(req: Request) {
         status: 'READY',
       },
       orderBy: { createdAt: 'desc' },
-      select: { id: true, text: true, input: true, json: true },
+      select: {
+        id: true,
+        text: true,
+        input: true,
+        json: true,
+      },
     });
 
     if (lastReady?.text) {
       const prevList = (lastReady.input as any)?.selectedList;
+
       if (sameSelectedList(prevList, wantedList)) {
         const inputJson = {
           mode: 'COMPAT',
@@ -447,7 +482,10 @@ export async function POST(req: Request) {
         },
       });
 
-      return NextResponse.json({ ok: false, error: String(ai.error || 'OPENAI_FAILED') }, { status: 500 });
+      return NextResponse.json(
+        { ok: false, error: String(ai.error || 'OPENAI_FAILED') },
+        { status: 500 }
+      );
     }
 
     await prisma.report.update({
@@ -464,6 +502,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, text: ai.text, cached: false });
   } catch (e: any) {
     const msg = e?.message ? String(e.message) : 'SERVER_ERROR';
+
     try {
       if (reportId) {
         await prisma.report.update({
@@ -476,6 +515,7 @@ export async function POST(req: Request) {
         });
       }
     } catch {}
+
     return NextResponse.json({ ok: false, error: msg }, { status: 500 });
   }
 }
