@@ -77,6 +77,15 @@ function verifyTelegramWebAppInitData(initData: string, botToken: string, maxAge
   return { ok: true as const, user };
 }
 
+function isPaidReport(pricingJson: any): boolean {
+  try {
+    const status = String(pricingJson?.yookassa?.status ?? '').trim().toLowerCase();
+    return status === 'succeeded';
+  } catch {
+    return false;
+  }
+}
+
 export async function POST(req: Request) {
   try {
     const botToken = envClean('TELEGRAM_BOT_TOKEN');
@@ -92,15 +101,20 @@ export async function POST(req: Request) {
     if (!v.ok) return NextResponse.json({ ok: false, error: v.error }, { status: 401 });
 
     const telegramId = v.user.id;
-    const user = await prisma.user.findUnique({ where: { telegramId }, select: { id: true } });
+    const user = await prisma.user.findUnique({
+      where: { telegramId },
+      select: { id: true },
+    });
+
     if (!user) return NextResponse.json({ ok: false, error: 'NO_USER' }, { status: 404 });
 
     const rows = await prisma.report.findMany({
-      where: { userId: user.id, status: 'READY' },
+      where: { userId: user.id },
       orderBy: { createdAt: 'desc' },
       select: {
         id: true,
         type: true,
+        status: true,
         createdAt: true,
         updatedAt: true,
 
@@ -120,14 +134,18 @@ export async function POST(req: Request) {
 
         palmScanId: true,
         input: true,
+        pricingJson: true,
       },
     });
 
+    const paidRows = rows.filter((r) => isPaidReport(r.pricingJson));
+
     return NextResponse.json({
       ok: true,
-      items: rows.map((r) => ({
+      items: paidRows.map((r) => ({
         id: r.id,
         type: r.type,
+        status: r.status,
         createdAt: r.createdAt.toISOString(),
         updatedAt: r.updatedAt.toISOString(),
 
@@ -150,6 +168,9 @@ export async function POST(req: Request) {
       })),
     });
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: 'LIST_FAILED', hint: String(e?.message || 'See server logs') }, { status: 500 });
+    return NextResponse.json(
+      { ok: false, error: 'LIST_FAILED', hint: String(e?.message || 'See server logs') },
+      { status: 500 }
+    );
   }
 }
