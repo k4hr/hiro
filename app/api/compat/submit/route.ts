@@ -1,4 +1,3 @@
-/* path: app/api/compat/submit/route.ts */
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { prisma } from '@/lib/prisma';
@@ -139,6 +138,14 @@ function countPaidSelected(selected: Record<OptionKey, boolean>) {
   return PAID_KEYS.filter((k) => selected[k] === true).length;
 }
 
+function lc(v: any) {
+  return String(v ?? '').trim().toLowerCase();
+}
+
+function isPaidPricing(pricingJson: any): boolean {
+  return lc(pricingJson?.yookassa?.status) === 'succeeded';
+}
+
 export async function POST(req: Request) {
   try {
     const botToken = envClean('TELEGRAM_BOT_TOKEN');
@@ -243,20 +250,10 @@ export async function POST(req: Request) {
       savedAt: new Date().toISOString(),
     };
 
-    const pricingJson = {
-      kind: 'NUM_COMPAT',
-      totalRub,
-      priceRub,
-      summaryPriceRub,
-      paidCount,
-      selected,
-    };
-
-    const draft = await prisma.report.findFirst({
+    const existing = await prisma.report.findFirst({
       where: {
         userId: user.id,
         type: 'NUM',
-        status: 'DRAFT',
         numMode: 'COMPAT',
         numDob1: d1,
         numDob2: d2,
@@ -264,12 +261,41 @@ export async function POST(req: Request) {
         numName2: name2,
       },
       orderBy: { createdAt: 'desc' },
-      select: { id: true },
+      select: {
+        id: true,
+        status: true,
+        pricingJson: true,
+      },
     });
 
-    if (draft) {
+    if (existing && isPaidPricing(existing.pricingJson)) {
+      return NextResponse.json({
+        ok: true,
+        reportId: existing.id,
+        totalRub,
+        paidCount,
+        alreadyPaid: true,
+      });
+    }
+
+    if (existing) {
+      const prev =
+        existing.pricingJson && typeof existing.pricingJson === 'object'
+          ? (existing.pricingJson as any)
+          : {};
+
+      const pricingJson = {
+        ...prev,
+        kind: 'NUM_COMPAT',
+        totalRub,
+        priceRub,
+        summaryPriceRub,
+        paidCount,
+        selected,
+      };
+
       const updated = await prisma.report.update({
-        where: { id: draft.id },
+        where: { id: existing.id },
         data: {
           input: inputJson,
           numMode: 'COMPAT',
@@ -293,6 +319,15 @@ export async function POST(req: Request) {
         paidCount,
       });
     }
+
+    const pricingJson = {
+      kind: 'NUM_COMPAT',
+      totalRub,
+      priceRub,
+      summaryPriceRub,
+      paidCount,
+      selected,
+    };
 
     const created = await prisma.report.create({
       data: {
