@@ -1,4 +1,3 @@
-/* path: app/api/num/submit/route.ts */
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { prisma } from '@/lib/prisma';
@@ -16,7 +15,6 @@ type TgUser = {
 type OptionKey = 'LIFE_PATH' | 'BIRTHDAY' | 'DIGITS' | 'PERIODS' | 'YEAR12' | 'SUMMARY';
 
 const PAID_KEYS: OptionKey[] = ['LIFE_PATH', 'BIRTHDAY', 'DIGITS', 'PERIODS', 'YEAR12'];
-const SUMMARY_KEY: OptionKey = 'SUMMARY';
 
 function envClean(name: string) {
   return String(process.env[name] ?? '').replace(/[\r\n]/g, '').trim();
@@ -82,6 +80,12 @@ function verifyTelegramWebAppInitData(initData: string, botToken: string, maxAge
   return { ok: true as const, user };
 }
 
+function daysInMonth(year: number, month: number) {
+  const isLeap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const maxByMonth = [31, isLeap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return maxByMonth[month - 1] ?? 31;
+}
+
 function parseDobToUtcDate(dob: string): Date | null {
   if (!/^\d{2}\.\d{2}\.\d{4}$/.test(dob)) return null;
 
@@ -93,6 +97,9 @@ function parseDobToUtcDate(dob: string): Date | null {
   if (!y || !m || !d) return null;
   if (y < 1900 || y > 2100) return null;
   if (m < 1 || m > 12) return null;
+
+  const dim = daysInMonth(y, m);
+  if (d < 1 || d > dim) return null;
 
   const iso = `${yyyy}-${mm}-${dd}T00:00:00.000Z`;
   const dt = new Date(iso);
@@ -122,6 +129,14 @@ function normalizeSelected(v: any): Record<OptionKey, boolean> {
 
 function countPaidSelected(selected: Record<OptionKey, boolean>) {
   return PAID_KEYS.filter((k) => selected[k] === true).length;
+}
+
+function lc(v: any) {
+  return String(v ?? '').trim().toLowerCase();
+}
+
+function isPaidPricing(pricingJson: any): boolean {
+  return lc(pricingJson?.yookassa?.status) === 'succeeded';
 }
 
 export async function POST(req: Request) {
@@ -170,7 +185,11 @@ export async function POST(req: Request) {
       select: { id: true },
     });
 
-    const priceRub = Number.isFinite(clientPriceRub as number) && (clientPriceRub as number) > 0 ? Number(clientPriceRub) : 39;
+    const priceRub =
+      Number.isFinite(clientPriceRub as number) && (clientPriceRub as number) > 0
+        ? Number(clientPriceRub)
+        : 39;
+
     const summaryPriceRub =
       Number.isFinite(clientSummaryPriceRub as number) && (clientSummaryPriceRub as number) > 0
         ? Number(clientSummaryPriceRub)
@@ -212,30 +231,49 @@ export async function POST(req: Request) {
       savedAt: new Date().toISOString(),
     };
 
-    const pricingJson = {
-      kind: 'NUM_DATE',
-      totalRub,
-      priceRub,
-      summaryPriceRub,
-      selectedCountPaid,
-      selected,
-    };
-
-    const draft = await prisma.report.findFirst({
+    const existing = await prisma.report.findFirst({
       where: {
         userId: user.id,
         type: 'NUM',
-        status: 'DRAFT',
         numMode: 'DATE',
         numDob1: dobDate,
       },
       orderBy: { createdAt: 'desc' },
-      select: { id: true },
+      select: {
+        id: true,
+        status: true,
+        pricingJson: true,
+      },
     });
 
-    if (draft) {
-      await prisma.report.update({
-        where: { id: draft.id },
+    if (existing && isPaidPricing(existing.pricingJson)) {
+      return NextResponse.json({
+        ok: true,
+        reportId: existing.id,
+        totalRub,
+        selectedCountPaid,
+        alreadyPaid: true,
+      });
+    }
+
+    if (existing) {
+      const prev =
+        existing.pricingJson && typeof existing.pricingJson === 'object'
+          ? (existing.pricingJson as any)
+          : {};
+
+      const pricingJson = {
+        ...prev,
+        kind: 'NUM_DATE',
+        totalRub,
+        priceRub,
+        summaryPriceRub,
+        selectedCountPaid,
+        selected,
+      };
+
+      const updated = await prisma.report.update({
+        where: { id: existing.id },
         data: {
           input: inputJson,
           numMode: 'DATE',
@@ -249,15 +287,25 @@ export async function POST(req: Request) {
           errorCode: null,
           errorText: null,
         },
+        select: { id: true },
       });
 
       return NextResponse.json({
         ok: true,
-        reportId: draft.id,
+        reportId: updated.id,
         totalRub,
         selectedCountPaid,
       });
     }
+
+    const pricingJson = {
+      kind: 'NUM_DATE',
+      totalRub,
+      priceRub,
+      summaryPriceRub,
+      selectedCountPaid,
+      selected,
+    };
 
     const created = await prisma.report.create({
       data: {
@@ -281,7 +329,7 @@ export async function POST(req: Request) {
       selectedCountPaid,
     });
   } catch (e: any) {
-    console.error(e);
+    console.error('[NUM_SUBMIT_ERROR]', e);
     return NextResponse.json(
       { ok: false, error: 'SUBMIT_FAILED', hint: String(e?.message || 'See server logs') },
       { status: 500 }
