@@ -13,6 +13,22 @@ type TgUser = {
   last_name: string | null;
 };
 
+type OptionKey =
+  | 'COMPAT_RESONANCE'
+  | 'COMPAT_GOOD'
+  | 'COMPAT_BAD'
+  | 'COMPAT_TALKS'
+  | 'COMPAT_MONEY_HOME'
+  | 'COMPAT_FORMULA';
+
+const PAID_KEYS: OptionKey[] = [
+  'COMPAT_RESONANCE',
+  'COMPAT_GOOD',
+  'COMPAT_BAD',
+  'COMPAT_TALKS',
+  'COMPAT_MONEY_HOME',
+];
+
 function envClean(name: string) {
   return String(process.env[name] ?? '').replace(/[\r\n]/g, '').trim();
 }
@@ -79,10 +95,20 @@ function verifyTelegramWebAppInitData(initData: string, botToken: string, maxAge
 
 function parseDobToUtcDate(dob: string): Date | null {
   if (!/^\d{2}\.\d{2}\.\d{4}$/.test(dob)) return null;
+
   const [dd, mm, yyyy] = dob.split('.');
+  const y = Number(yyyy);
+  const m = Number(mm);
+  const d = Number(dd);
+
+  if (!y || !m || !d) return null;
+  if (y < 1900 || y > 2100) return null;
+  if (m < 1 || m > 12) return null;
+
   const iso = `${yyyy}-${mm}-${dd}T00:00:00.000Z`;
   const dt = new Date(iso);
   if (!Number.isFinite(dt.getTime())) return null;
+
   return dt;
 }
 
@@ -97,14 +123,20 @@ function safeNum(v: any): number | null {
   return n;
 }
 
-function countSelectedTrue(selected: any): number {
-  if (!selected || typeof selected !== 'object') return 0;
-  let c = 0;
-  for (const [k, v] of Object.entries(selected)) {
-    if (k.toUpperCase().includes('FORMULA')) continue;
-    if (v === true) c += 1;
-  }
-  return c;
+function normalizeSelected(v: any): Record<OptionKey, boolean> {
+  const src = v && typeof v === 'object' ? v : {};
+  return {
+    COMPAT_RESONANCE: src.COMPAT_RESONANCE === true,
+    COMPAT_GOOD: src.COMPAT_GOOD === true,
+    COMPAT_BAD: src.COMPAT_BAD === true,
+    COMPAT_TALKS: src.COMPAT_TALKS === true,
+    COMPAT_MONEY_HOME: src.COMPAT_MONEY_HOME === true,
+    COMPAT_FORMULA: true,
+  };
+}
+
+function countPaidSelected(selected: Record<OptionKey, boolean>) {
+  return PAID_KEYS.filter((k) => selected[k] === true).length;
 }
 
 export async function POST(req: Request) {
@@ -127,7 +159,11 @@ export async function POST(req: Request) {
 
     const age1 = safeNum(body.age1);
     const age2 = safeNum(body.age2);
-    const selected = body.selected && typeof body.selected === 'object' ? body.selected : {};
+    const selected = normalizeSelected(body.selected);
+
+    const clientPriceRub = safeNum(body.priceRub);
+    const clientSummaryPriceRub = safeNum(body.summaryPriceRub);
+    const clientTotalRub = safeNum(body.totalRub);
 
     if (!initData) return NextResponse.json({ ok: false, error: 'NO_INIT_DATA' }, { status: 401 });
     if (!dob1 || !dob2) return NextResponse.json({ ok: false, error: 'NO_DOB' }, { status: 400 });
@@ -157,12 +193,32 @@ export async function POST(req: Request) {
       select: { id: true },
     });
 
-    const modulePriceRub = 39;
-    const summaryPriceRub = 49;
+    const priceRub =
+      Number.isFinite(clientPriceRub as number) && (clientPriceRub as number) > 0
+        ? Number(clientPriceRub)
+        : 39;
 
-    const selectedFixed = { ...(selected ?? {}), COMPAT_FORMULA: true };
-    const paidCount = countSelectedTrue(selectedFixed);
-    const totalRub = paidCount * modulePriceRub + summaryPriceRub;
+    const summaryPriceRub =
+      Number.isFinite(clientSummaryPriceRub as number) && (clientSummaryPriceRub as number) > 0
+        ? Number(clientSummaryPriceRub)
+        : 49;
+
+    const paidCount = countPaidSelected(selected);
+    const totalRub = paidCount * priceRub + summaryPriceRub;
+
+    if (!Number.isFinite(totalRub) || totalRub <= 0) {
+      return NextResponse.json({ ok: false, error: 'BAD_TOTAL_RUB' }, { status: 400 });
+    }
+
+    if (clientTotalRub !== null && Number(clientTotalRub) !== totalRub) {
+      console.log('[COMPAT_SUBMIT_TOTAL_MISMATCH]', {
+        clientTotalRub,
+        serverTotalRub: totalRub,
+        paidCount,
+        priceRub,
+        summaryPriceRub,
+      });
+    }
 
     const inputJson = {
       mode: 'COMPAT',
@@ -172,22 +228,28 @@ export async function POST(req: Request) {
       dob2,
       name2,
       age2,
-      selected: selectedFixed,
+      selected,
       clientPricing: {
-        totalRub: safeNum(body.totalRub),
-        priceRub: safeNum(body.priceRub),
-        summaryPriceRub: safeNum(body.summaryPriceRub),
+        totalRub: clientTotalRub,
+        priceRub: clientPriceRub,
+        summaryPriceRub: clientSummaryPriceRub,
+      },
+      serverPricing: {
+        paidCount,
+        priceRub,
+        summaryPriceRub,
+        totalRub,
       },
       savedAt: new Date().toISOString(),
     };
 
     const pricingJson = {
       kind: 'NUM_COMPAT',
-      modulePriceRub,
+      totalRub,
+      priceRub,
       summaryPriceRub,
       paidCount,
-      totalRub,
-      selected: selectedFixed,
+      selected,
     };
 
     const draft = await prisma.report.findFirst({
@@ -215,7 +277,7 @@ export async function POST(req: Request) {
           numName1: name1,
           numDob2: d2,
           numName2: name2,
-          priceRub: modulePriceRub,
+          priceRub,
           totalRub,
           pricingJson,
           errorCode: null,
@@ -228,6 +290,7 @@ export async function POST(req: Request) {
         ok: true,
         reportId: updated.id,
         totalRub,
+        paidCount,
       });
     }
 
@@ -242,7 +305,7 @@ export async function POST(req: Request) {
         numName1: name1,
         numDob2: d2,
         numName2: name2,
-        priceRub: modulePriceRub,
+        priceRub,
         totalRub,
         pricingJson,
       },
@@ -253,6 +316,7 @@ export async function POST(req: Request) {
       ok: true,
       reportId: created.id,
       totalRub,
+      paidCount,
     });
   } catch (e: any) {
     console.error('[COMPAT_SUBMIT_ERROR]', e);
