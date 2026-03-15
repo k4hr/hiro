@@ -1,4 +1,3 @@
-/* path: app/palm/report/ReportClient.tsx */
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -49,6 +48,8 @@ type Payload = {
   rightUrl: string;
   selected: Record<OptionKey, boolean>;
   totalRub: number;
+  priceRub?: number;
+  createdAt?: string;
 };
 
 type DbReport = {
@@ -60,7 +61,7 @@ type DbReport = {
   input: any | null;
 };
 
-type ScanGetResp =
+type PalmGetResp =
   | {
       ok: true;
       scan: {
@@ -71,23 +72,29 @@ type ScanGetResp =
         rightImageUrl: string | null;
         errorCode: string | null;
         errorText: string | null;
-      };
+      } | null;
       report: DbReport | null;
       text: string;
       hasText: boolean;
-
-      // ✅ ДОБАВЛЕНО: признак, что оплата подтверждена
       paid: boolean;
+      paymentStatus?: string | null;
     }
-  | { ok: false; error: string; hint?: string };
+  | {
+      ok: false;
+      error: string;
+      hint?: string;
+    };
 
 function safeSelectedFromDb(input: any): Record<OptionKey, boolean> | null {
   try {
     const sel = input?.selected;
     if (!sel || typeof sel !== 'object') return null;
+
     const keys: OptionKey[] = ['HEART', 'HEAD', 'LIFE', 'FATE', 'SUN', 'MERCURY', 'MOUNTS', 'HANDS_DIFF'];
     const out: any = {};
+
     for (const k of keys) out[k] = sel[k] === true;
+
     return out as Record<OptionKey, boolean>;
   } catch {
     return null;
@@ -117,15 +124,13 @@ function optionTitle(k: OptionKey) {
   }
 }
 
-/** ✅ делимся строго этой ссылкой */
 const DIRECT_LINK = 'https://t.me/arcanumapp_bot/directlink';
 
 function openShareDirect() {
   haptic('medium');
 
-  const url = DIRECT_LINK;
   const text = 'Смотри мой разбор ладони в мини-приложении Арканум';
-  const shareLink = `https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`;
+  const shareLink = `https://t.me/share/url?url=${encodeURIComponent(DIRECT_LINK)}&text=${encodeURIComponent(text)}`;
 
   try {
     const w = tg();
@@ -166,25 +171,30 @@ async function copyToClipboard(text: string): Promise<boolean> {
   }
 }
 
+function normalizeStatus(v: any): string {
+  return String(v || '').trim().toUpperCase();
+}
+
 export default function ReportClient() {
   const sp = useSearchParams();
   const router = useRouter();
 
   const scanId = String(sp.get('scanId') || '').trim();
+  const reportId = String(sp.get('reportId') || '').trim();
 
   const [payload, setPayload] = useState<Payload | null>(null);
   const [dbReport, setDbReport] = useState<DbReport | null>(null);
   const [dbSelected, setDbSelected] = useState<Record<OptionKey, boolean> | null>(null);
 
-  const [scanStatus, setScanStatus] = useState<string>('');
+  const [scanStatus, setScanStatus] = useState('');
   const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState<string>('');
-  const [text, setText] = useState<string>('');
-  const [info, setInfo] = useState<string>('');
+  const [err, setErr] = useState('');
+  const [text, setText] = useState('');
+  const [info, setInfo] = useState('');
+  const [paid, setPaid] = useState(false);
+  const [paymentStatus, setPaymentStatus] = useState('');
 
-  const [paid, setPaid] = useState<boolean>(false);
-
-  const [toast, setToast] = useState<string>('');
+  const [toast, setToast] = useState('');
   const toastOn = Boolean(toast);
 
   const selectedForUi = payload?.selected ?? dbSelected;
@@ -192,10 +202,27 @@ export default function ReportClient() {
   const selectedKeysRu = useMemo(() => {
     const s = selectedForUi;
     if (!s) return [];
-    return Object.entries(s)
+    return (Object.entries(s) as Array<[OptionKey, boolean]>)
       .filter(([, v]) => v)
-      .map(([k]) => optionTitle(k as OptionKey));
+      .map(([k]) => optionTitle(k));
   }, [selectedForUi]);
+
+  const analyzeStartedRef = useRef(false);
+  const pollRef = useRef<any>(null);
+
+  const stopPoll = () => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  };
+
+  const startPoll = () => {
+    if (pollRef.current) return;
+    pollRef.current = setInterval(() => {
+      fetchFromDb(true);
+    }, 2500);
+  };
 
   useEffect(() => {
     try {
@@ -218,38 +245,18 @@ export default function ReportClient() {
       }
     } catch {}
 
-    fetchFromDb();
+    fetchFromDb(false);
+    startPoll();
+
+    return () => stopPoll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scanId]);
+  }, [scanId, reportId]);
 
   useEffect(() => {
     if (!toastOn) return;
     const t = setTimeout(() => setToast(''), 1800);
     return () => clearTimeout(t);
   }, [toastOn]);
-
-  // чтобы не запускать analyze несколько раз
-  const analyzeStartedRef = useRef(false);
-
-  // polling оплаты
-  const pollRef = useRef<any>(null);
-  const stopPoll = () => {
-    if (pollRef.current) {
-      clearInterval(pollRef.current);
-      pollRef.current = null;
-    }
-  };
-  const startPoll = () => {
-    if (pollRef.current) return;
-    pollRef.current = setInterval(() => {
-      fetchFromDb(true);
-    }, 2000);
-  };
-
-  useEffect(() => {
-    return () => stopPoll();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   const fetchFromDb = async (silent = false) => {
     const initData = getInitDataNow();
@@ -268,10 +275,10 @@ export default function ReportClient() {
       const res = await fetch('/api/palm/get', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ initData, scanId }),
+        body: JSON.stringify({ initData, scanId, reportId }),
       });
 
-      const j = (await res.json().catch(() => null)) as ScanGetResp | null;
+      const j = (await res.json().catch(() => null)) as PalmGetResp | null;
 
       if (!res.ok || !j || (j as any).ok !== true) {
         if (!silent) {
@@ -281,63 +288,87 @@ export default function ReportClient() {
         return;
       }
 
-      setScanStatus(j.scan?.status ? String(j.scan.status) : '');
+      setScanStatus(String(j.scan?.status || ''));
+      setDbReport(j.report ?? null);
+      setPaid(Boolean(j.paid === true));
+      setPaymentStatus(String(j.paymentStatus || ''));
 
-      const rep = j.report ?? null;
-      setDbReport(rep);
-
-      const selFromDb = rep?.input ? safeSelectedFromDb(rep.input) : null;
+      const selFromDb = j.report?.input ? safeSelectedFromDb(j.report.input) : null;
       if (selFromDb) setDbSelected(selFromDb);
 
-      const isPaid = Boolean(j.paid === true);
-      setPaid(isPaid);
+      const rep = j.report ?? null;
+      const repStatus = normalizeStatus(rep?.status);
 
       if (j.hasText && j.text) {
         stopPoll();
         setText(String(j.text));
         setInfo('');
+        setErr('');
         setLoading(false);
         return;
       }
 
-      // текста нет
-      const s = payload?.selected ?? selFromDb;
+      if (repStatus === 'FAILED') {
+        stopPoll();
+        setErr(rep?.errorText || rep?.errorCode || 'ANALYZE_FAILED');
+        setLoading(false);
+        return;
+      }
 
-      if (!isPaid) {
-        // ✅ пока оплата не подтверждена — НЕ анализируем
+      const selectedNow = payload?.selected ?? selFromDb;
+      const handednessNow = (payload?.handedness ?? (rep?.input?.handedness as Handedness) ?? null) as Handedness | null;
+      const dobNow = String(payload?.dob ?? rep?.input?.dob ?? '');
+      const ageNow = payload?.age ?? rep?.input?.age ?? null;
+
+      if (!j.paid) {
         analyzeStartedRef.current = false;
         setText('');
         setInfo('Ожидаем подтверждение оплаты…');
-        startPoll();
         setLoading(false);
+        startPoll();
         return;
       }
 
-      // оплата подтверждена, но текста нет => запускаем анализ 1 раз
-      stopPoll();
+      if (!rep) {
+        setInfo('Оплата подтверждена. Отчёт ещё не найден.');
+        setLoading(false);
+        startPoll();
+        return;
+      }
 
-      if (!s) {
+      if (repStatus === 'ANALYZING' || repStatus === 'PROCESSING') {
+        setInfo('Оплата подтверждена. Готовим разбор…');
+        setLoading(false);
+        startPoll();
+        return;
+      }
+
+      if (!selectedNow || !handednessNow || !dobNow) {
         setInfo('Данные для анализа не найдены.');
         setLoading(false);
+        startPoll();
         return;
       }
 
-      if (!analyzeStartedRef.current) {
+      if (!analyzeStartedRef.current && (repStatus === 'DRAFT' || !repStatus)) {
         analyzeStartedRef.current = true;
         setInfo('Оплата подтверждена. Запускаем анализ…');
         setLoading(false);
 
         runAnalyze({
           scanId,
-          handedness: (payload?.handedness ?? (rep?.input?.handedness as Handedness) ?? 'RIGHT') as Handedness,
-          dob: String(payload?.dob ?? rep?.input?.dob ?? ''),
-          age: payload?.age ?? (rep?.input?.age ?? null),
-          selected: s,
+          reportId: rep.id || reportId || undefined,
+          handedness: handednessNow,
+          dob: dobNow,
+          age: ageNow,
+          selected: selectedNow,
         });
         return;
       }
 
+      setInfo('Оплата подтверждена. Ожидаем готовый отчёт…');
       setLoading(false);
+      startPoll();
     } catch (e: any) {
       if (!silent) {
         setErr(e?.message ? String(e.message) : 'NETWORK');
@@ -346,7 +377,14 @@ export default function ReportClient() {
     }
   };
 
-  const runAnalyze = async (p: { scanId: string; handedness: Handedness; dob: string; age: any; selected: Record<OptionKey, boolean> }) => {
+  const runAnalyze = async (p: {
+    scanId: string;
+    reportId?: string;
+    handedness: Handedness;
+    dob: string;
+    age: any;
+    selected: Record<OptionKey, boolean>;
+  }) => {
     const initData = getInitDataNow();
     if (!initData) {
       setErr('NO_INIT_DATA');
@@ -354,6 +392,7 @@ export default function ReportClient() {
     }
 
     setErr('');
+    setInfo('');
     setText('');
     setLoading(true);
 
@@ -364,6 +403,7 @@ export default function ReportClient() {
         body: JSON.stringify({
           initData,
           scanId: p.scanId,
+          reportId: p.reportId,
           handedness: p.handedness,
           dob: p.dob,
           age: p.age,
@@ -372,21 +412,30 @@ export default function ReportClient() {
       });
 
       const j = (await res.json().catch(() => null)) as any;
-      if (!res.ok || !j || j.ok !== true || typeof j.text !== 'string') {
+
+      if (!res.ok || !j || j.ok !== true) {
         setErr(j?.error ? String(j.error) : `ANALYZE_FAILED(${res.status})`);
         setLoading(false);
+        startPoll();
         return;
       }
 
-      setText(String(j.text));
-      setInfo('');
-      setLoading(false);
+      if (typeof j.text === 'string' && j.text.trim()) {
+        setText(String(j.text));
+        setInfo('');
+        setLoading(false);
+        stopPoll();
+        return;
+      }
 
-      // подтянем БД (report/status/text)
+      setInfo('Анализ запущен. Ожидаем готовый отчёт…');
+      setLoading(false);
+      startPoll();
       fetchFromDb(true);
     } catch (e: any) {
       setErr(e?.message ? String(e.message) : 'NETWORK');
       setLoading(false);
+      startPoll();
     }
   };
 
@@ -401,16 +450,25 @@ export default function ReportClient() {
     router.push('/palm');
   };
 
-  const showMeta = Boolean(payload || scanStatus || dbSelected);
+  const showMeta = Boolean(payload || scanStatus || dbSelected || dbReport);
   const ready = Boolean(text) && !loading && !err;
+  const repStatus = normalizeStatus(dbReport?.status);
+
+  const subtitle = ready
+    ? 'ОТЧЁТ ГОТОВ'
+    : loading
+      ? 'ПРОХОДИТ АНАЛИЗ...'
+      : !paid
+        ? 'ОЖИДАЕМ ОПЛАТУ...'
+        : repStatus === 'ANALYZING' || repStatus === 'PROCESSING'
+          ? 'ГОТОВИМ РАЗБОР...'
+          : 'ОЖИДАЕМ ОТЧЁТ...';
 
   return (
     <main className="p">
       <header className="hero">
         <div className="title">РАЗБОР</div>
-        <div className="subtitle">
-          {ready ? 'ОТЧЁТ ГОТОВ' : loading ? 'ПРОХОДИТ АНАЛИЗ...' : paid ? 'ОЖИДАЕМ ОТЧЁТ...' : 'ОЖИДАЕМ ОПЛАТУ...'}
-        </div>
+        <div className="subtitle">{subtitle}</div>
       </header>
 
       {toastOn ? (
@@ -423,7 +481,7 @@ export default function ReportClient() {
         <section className="card">
           <div className="label">Ошибка</div>
           <div className="warn">{err}</div>
-          <div className="row">
+          <div className="actionsGrid">
             <button type="button" className="btn" onClick={() => fetchFromDb(false)} disabled={loading}>
               Обновить
             </button>
@@ -441,9 +499,19 @@ export default function ReportClient() {
           <div className="hint">
             Оплата: <b>{paid ? 'подтверждена' : 'ожидается'}</b>
           </div>
+          {paymentStatus ? (
+            <div className="hint">
+              Статус платежа: <b>{paymentStatus}</b>
+            </div>
+          ) : null}
           {scanStatus ? (
             <div className="hint">
               PalmScan.status: <b>{scanStatus}</b>
+            </div>
+          ) : null}
+          {repStatus ? (
+            <div className="hint">
+              Статус отчёта: <b>{repStatus}</b>
             </div>
           ) : null}
         </section>
@@ -456,6 +524,12 @@ export default function ReportClient() {
             <div className="metaLine">
               <b>ScanId:</b> {scanId || '—'}
             </div>
+
+            {reportId || dbReport?.id ? (
+              <div className="metaLine">
+                <b>ReportId:</b> {reportId || dbReport?.id}
+              </div>
+            ) : null}
 
             {scanStatus ? (
               <div className="metaLine">
@@ -482,12 +556,18 @@ export default function ReportClient() {
 
         {text ? <pre className="out">{text}</pre> : null}
 
-        <div className="row">
+        <div className="actionsGrid">
           <button type="button" className="btn2" onClick={onCopy} disabled={!ready}>
             Скопировать
           </button>
           <button type="button" className="btn" onClick={openShareDirect} disabled={!ready}>
             Поделиться
+          </button>
+        </div>
+
+        <div className="actionsSingle">
+          <button type="button" className="btn" onClick={() => fetchFromDb(false)} disabled={loading}>
+            Обновить
           </button>
         </div>
       </section>
@@ -507,6 +587,7 @@ export default function ReportClient() {
           align-items: center;
           gap: 12px;
         }
+
         .p > * {
           width: 100%;
           max-width: 520px;
@@ -624,21 +705,31 @@ export default function ReportClient() {
           word-break: break-word;
         }
 
-        .row {
-          display: flex;
+        .actionsGrid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 10px;
+          margin-top: 4px;
+        }
+
+        .actionsSingle {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr);
           gap: 10px;
           margin-top: 4px;
         }
 
         .btn,
         .btn2 {
-          flex: 1;
+          width: 100%;
+          min-width: 0;
           border-radius: 999px;
           padding: 12px 14px;
           font-size: 14px;
           font-weight: 950;
           cursor: pointer;
           -webkit-tap-highlight-color: transparent;
+          text-align: center;
         }
 
         .btn {
@@ -691,6 +782,12 @@ export default function ReportClient() {
         .backBtn:active {
           transform: scale(0.99);
           opacity: 0.92;
+        }
+
+        @media (max-width: 420px) {
+          .actionsGrid {
+            grid-template-columns: 1fr;
+          }
         }
       `}</style>
     </main>
