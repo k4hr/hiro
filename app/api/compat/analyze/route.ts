@@ -1,4 +1,3 @@
-/* path: app/api/compat/analyze/route.ts */
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { prisma } from '@/lib/prisma';
@@ -124,11 +123,6 @@ function optionTitle(k: OptionKey) {
   }
 }
 
-/**
- * ✅ Выбор пунктов:
- * - пользователь может включать/выключать 5 пунктов
- * - COMPAT_FORMULA всегда включён и всегда последний
- */
 function pickSelected(selected: Record<string, any> | null | undefined): OptionKey[] {
   const paid: OptionKey[] = ['COMPAT_RESONANCE', 'COMPAT_GOOD', 'COMPAT_BAD', 'COMPAT_TALKS', 'COMPAT_MONEY_HOME'];
   const out: OptionKey[] = [];
@@ -220,7 +214,9 @@ async function callOpenAI(args: { apiKey: string; prompt: string }) {
   } else if (Array.isArray(j.output)) {
     for (const item of j.output) {
       if (item?.type === 'message' && Array.isArray(item.content)) {
-        for (const c of item.content) if (c?.type === 'output_text' && typeof c.text === 'string') outText += c.text;
+        for (const c of item.content) {
+          if (c?.type === 'output_text' && typeof c.text === 'string') outText += c.text;
+        }
       }
     }
     outText = outText.trim();
@@ -240,6 +236,15 @@ function sameSelectedList(a: any, b: any): boolean {
   }
 }
 
+function lc(v: any) {
+  return String(v ?? '').trim().toLowerCase();
+}
+
+function isPaidByPricing(pricingJson: any): boolean {
+  const status = lc(pricingJson?.yookassa?.status);
+  return ['succeeded', 'paid', 'success', 'captured'].includes(status);
+}
+
 export async function POST(req: Request) {
   let reportId: string | null = null;
 
@@ -254,6 +259,8 @@ export async function POST(req: Request) {
     if (!body) return NextResponse.json({ ok: false, error: 'BAD_JSON' }, { status: 400 });
 
     const initData = String(body.initData || '').trim();
+    reportId = String(body.reportId || '').trim() || null;
+
     const dob1 = String(body.dob1 || '').trim();
     const dob2 = String(body.dob2 || '').trim();
     const name1 = cleanName(body.name1);
@@ -276,44 +283,123 @@ export async function POST(req: Request) {
     if (!v.ok) return NextResponse.json({ ok: false, error: v.error }, { status: 401 });
 
     const telegramId = v.user.id;
-    const user = await prisma.user.findUnique({ where: { telegramId }, select: { id: true } });
+    const user = await prisma.user.findUnique({
+      where: { telegramId },
+      select: { id: true },
+    });
     if (!user) return NextResponse.json({ ok: false, error: 'NO_USER' }, { status: 404 });
 
-    // если пришёл selected в запросе — это "новый заказ", кеш можно отдавать ТОЛЬКО если список совпадает
     const selectedFixed = { ...(selectedFromReq ?? {}), COMPAT_FORMULA: true };
     const wantedList = pickSelected(selectedFixed);
 
+    let currentReport: any = null;
+
+    if (reportId) {
+      currentReport = await prisma.report.findFirst({
+        where: {
+          id: reportId,
+          userId: user.id,
+          type: 'NUM',
+          numMode: 'COMPAT',
+        },
+        select: {
+          id: true,
+          status: true,
+          text: true,
+          input: true,
+          pricingJson: true,
+          errorCode: true,
+          errorText: true,
+        },
+      });
+
+      if (!currentReport) {
+        return NextResponse.json({ ok: false, error: 'REPORT_NOT_FOUND' }, { status: 404 });
+      }
+    } else {
+      currentReport = await prisma.report.findFirst({
+        where: {
+          userId: user.id,
+          type: 'NUM',
+          numMode: 'COMPAT',
+          numDob1: d1,
+          numDob2: d2,
+          numName1: name1,
+          numName2: name2,
+        },
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          status: true,
+          text: true,
+          input: true,
+          pricingJson: true,
+          errorCode: true,
+          errorText: true,
+        },
+      });
+
+      if (!currentReport) {
+        return NextResponse.json({ ok: false, error: 'REPORT_NOT_FOUND' }, { status: 404 });
+      }
+
+      reportId = currentReport.id;
+    }
+
+    if (!isPaidByPricing(currentReport.pricingJson)) {
+      return NextResponse.json({ ok: false, error: 'PAYMENT_NOT_CONFIRMED' }, { status: 402 });
+    }
+
+    if (String(currentReport.status || '').toUpperCase() === 'READY' && typeof currentReport.text === 'string' && currentReport.text.trim()) {
+      return NextResponse.json({ ok: true, text: currentReport.text, cached: true });
+    }
+
     const lastReady = await prisma.report.findFirst({
-      where: { userId: user.id, type: 'NUM', numMode: 'COMPAT', numDob1: d1, numDob2: d2, numName1: name1, numName2: name2, status: 'READY' },
+      where: {
+        userId: user.id,
+        type: 'NUM',
+        numMode: 'COMPAT',
+        numDob1: d1,
+        numDob2: d2,
+        numName1: name1,
+        numName2: name2,
+        status: 'READY',
+      },
       orderBy: { createdAt: 'desc' },
-      select: { id: true, text: true, input: true },
+      select: { id: true, text: true, input: true, json: true },
     });
 
     if (lastReady?.text) {
       const prevList = (lastReady.input as any)?.selectedList;
-      if (!selectedFromReq || sameSelectedList(prevList, wantedList)) {
+      if (sameSelectedList(prevList, wantedList)) {
+        const inputJson = {
+          mode: 'COMPAT',
+          dob1,
+          name1,
+          age1,
+          dob2,
+          name2,
+          age2,
+          selected: selectedFixed,
+          selectedList: wantedList,
+          analyzedAt: new Date().toISOString(),
+        };
+
+        await prisma.report.update({
+          where: { id: reportId! },
+          data: {
+            status: 'READY',
+            text: lastReady.text,
+            input: inputJson,
+            json: lastReady.json ?? null,
+            errorCode: null,
+            errorText: null,
+          },
+        });
+
         return NextResponse.json({ ok: true, text: lastReady.text, cached: true });
       }
     }
-
-    const lastAny = await prisma.report.findFirst({
-      where: { userId: user.id, type: 'NUM', numMode: 'COMPAT', numDob1: d1, numDob2: d2, numName1: name1, numName2: name2 },
-      orderBy: { createdAt: 'desc' },
-      select: { id: true, status: true, input: true, text: true },
-    });
-
-    const selectedObj =
-      selectedFromReq ??
-      ((lastAny?.input && typeof lastAny.input === 'object' && (lastAny.input as any).selected) ? (lastAny.input as any).selected : undefined);
-
-    const selectedObjFixed = { ...(selectedObj ?? {}), COMPAT_FORMULA: true };
-    const selectedList = pickSelected(selectedObjFixed);
-
-    const draft = await prisma.report.findFirst({
-      where: { userId: user.id, type: 'NUM', numMode: 'COMPAT', numDob1: d1, numDob2: d2, numName1: name1, numName2: name2, status: 'DRAFT' },
-      orderBy: { createdAt: 'desc' },
-      select: { id: true },
-    });
 
     const inputJson = {
       mode: 'COMPAT',
@@ -323,47 +409,72 @@ export async function POST(req: Request) {
       dob2,
       name2,
       age2,
-      selected: selectedObjFixed,
-      selectedList,
+      selected: selectedFixed,
+      selectedList: wantedList,
       analyzedAt: new Date().toISOString(),
     };
 
-    if (draft) {
-      reportId = draft.id;
-      await prisma.report.update({ where: { id: reportId }, data: { input: inputJson, errorCode: null, errorText: null } });
-    } else {
-      const created = await prisma.report.create({
-        data: { userId: user.id, type: 'NUM', status: 'DRAFT', input: inputJson, numMode: 'COMPAT', numDob1: d1, numName1: name1, numDob2: d2, numName2: name2 },
-        select: { id: true },
-      });
-      reportId = created.id;
-    }
+    await prisma.report.update({
+      where: { id: reportId! },
+      data: {
+        status: 'ANALYZING',
+        input: inputJson,
+        errorCode: null,
+        errorText: null,
+      },
+    });
 
-    const prompt = buildPrompt({ dob1, name1, age1, dob2, name2, age2, selectedList });
+    const prompt = buildPrompt({
+      dob1,
+      name1,
+      age1,
+      dob2,
+      name2,
+      age2,
+      selectedList: wantedList,
+    });
+
     const ai = await callOpenAI({ apiKey, prompt });
 
     if (!ai.ok) {
-      if (reportId) {
-        await prisma.report.update({
-          where: { id: reportId },
-          data: { status: 'FAILED', errorCode: 'OPENAI_FAILED', errorText: String(ai.error || 'OPENAI_FAILED'), json: ai.raw ?? null },
-        });
-      }
+      await prisma.report.update({
+        where: { id: reportId! },
+        data: {
+          status: 'FAILED',
+          errorCode: 'OPENAI_FAILED',
+          errorText: String(ai.error || 'OPENAI_FAILED'),
+          json: ai.raw ?? null,
+        },
+      });
+
       return NextResponse.json({ ok: false, error: String(ai.error || 'OPENAI_FAILED') }, { status: 500 });
     }
 
-    if (reportId) {
-      await prisma.report.update({
-        where: { id: reportId },
-        data: { status: 'READY', text: ai.text, json: ai.raw ?? null, errorCode: null, errorText: null },
-      });
-    }
+    await prisma.report.update({
+      where: { id: reportId! },
+      data: {
+        status: 'READY',
+        text: ai.text,
+        json: ai.raw ?? null,
+        errorCode: null,
+        errorText: null,
+      },
+    });
 
     return NextResponse.json({ ok: true, text: ai.text, cached: false });
   } catch (e: any) {
     const msg = e?.message ? String(e.message) : 'SERVER_ERROR';
     try {
-      if (reportId) await prisma.report.update({ where: { id: reportId }, data: { status: 'FAILED', errorCode: 'SERVER_ERROR', errorText: msg } });
+      if (reportId) {
+        await prisma.report.update({
+          where: { id: reportId },
+          data: {
+            status: 'FAILED',
+            errorCode: 'SERVER_ERROR',
+            errorText: msg,
+          },
+        });
+      }
     } catch {}
     return NextResponse.json({ ok: false, error: msg }, { status: 500 });
   }
