@@ -1,4 +1,3 @@
-/* path: app/api/reports/list/route.ts */
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { prisma } from '@/lib/prisma';
@@ -77,13 +76,19 @@ function verifyTelegramWebAppInitData(initData: string, botToken: string, maxAge
   return { ok: true as const, user };
 }
 
-function isPaidReport(pricingJson: any): boolean {
-  try {
-    const status = String(pricingJson?.yookassa?.status ?? '').trim().toLowerCase();
-    return status === 'succeeded';
-  } catch {
-    return false;
-  }
+function lc(v: any) {
+  return String(v ?? '').trim().toLowerCase();
+}
+
+function isPaidReport(row: any): boolean {
+  const pricingJson = row?.pricingJson && typeof row.pricingJson === 'object' ? row.pricingJson : {};
+  const status = lc(pricingJson?.yookassa?.status);
+  const reportStatus = lc(row?.status);
+
+  if (status === 'succeeded') return true;
+  if (reportStatus === 'ready' && !!row?.text) return true;
+
+  return false;
 }
 
 export async function POST(req: Request) {
@@ -117,6 +122,7 @@ export async function POST(req: Request) {
         status: true,
         createdAt: true,
         updatedAt: true,
+        text: true,
 
         numMode: true,
         numDob1: true,
@@ -138,7 +144,7 @@ export async function POST(req: Request) {
       },
     });
 
-    const paidRows = rows.filter((r) => isPaidReport(r.pricingJson));
+    const paidRows = rows.filter((r) => isPaidReport(r));
 
     return NextResponse.json({
       ok: true,
