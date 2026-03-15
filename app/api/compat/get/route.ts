@@ -53,7 +53,9 @@ function verifyTelegramWebAppInitData(initData: string, botToken: string, maxAge
   const secretKey = crypto.createHmac('sha256', 'WebAppData').update(botToken).digest();
   const computedHash = crypto.createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
 
-  if (!timingSafeEqualHex(computedHash, hash)) return { ok: false as const, error: 'BAD_HASH' as const };
+  if (!timingSafeEqualHex(computedHash, hash)) {
+    return { ok: false as const, error: 'BAD_HASH' as const };
+  }
 
   const userStr = params.get('user');
   if (!userStr) return { ok: false as const, error: 'NO_USER' as const };
@@ -79,10 +81,12 @@ function verifyTelegramWebAppInitData(initData: string, botToken: string, maxAge
 
 function parseDobToUtcDate(dob: string): Date | null {
   if (!/^\d{2}\.\d{2}\.\d{4}$/.test(dob)) return null;
+
   const [dd, mm, yyyy] = dob.split('.');
   const iso = `${yyyy}-${mm}-${dd}T00:00:00.000Z`;
   const dt = new Date(iso);
   if (!Number.isFinite(dt.getTime())) return null;
+
   return dt;
 }
 
@@ -115,8 +119,10 @@ export async function POST(req: Request) {
     const v = verifyTelegramWebAppInitData(initData, botToken);
     if (!v.ok) return NextResponse.json({ ok: false, error: v.error }, { status: 401 });
 
-    const telegramId = v.user.id;
-    const user = await prisma.user.findUnique({ where: { telegramId }, select: { id: true } });
+    const user = await prisma.user.findUnique({
+      where: { telegramId: v.user.id },
+      select: { id: true },
+    });
     if (!user) return NextResponse.json({ ok: false, error: 'NO_USER' }, { status: 404 });
 
     const last = await prisma.report.findFirst({
@@ -143,8 +149,8 @@ export async function POST(req: Request) {
     });
 
     const hasText = Boolean(last?.status === 'READY' && last?.text);
-    const ykStatus = (last?.pricingJson as any)?.yookassa?.status;
-    const paid = String(ykStatus || '').toLowerCase() === 'succeeded';
+    const ykStatus = String((last?.pricingJson as any)?.yookassa?.status ?? '').toLowerCase();
+    const paid = ykStatus === 'succeeded';
 
     return NextResponse.json({
       ok: true,
@@ -156,14 +162,18 @@ export async function POST(req: Request) {
             errorCode: last.errorCode,
             errorText: last.errorText,
             input: last.input,
+            pricingJson: last.pricingJson ?? null,
           }
         : null,
-      text: hasText ? String(last!.text) : '',
+      text: hasText ? String(last.text) : '',
       hasText,
       paid,
     });
   } catch (e: any) {
     console.error(e);
-    return NextResponse.json({ ok: false, error: 'GET_FAILED', hint: String(e?.message || 'See server logs') }, { status: 500 });
+    return NextResponse.json(
+      { ok: false, error: 'GET_FAILED', hint: String(e?.message || 'See server logs') },
+      { status: 500 }
+    );
   }
 }
