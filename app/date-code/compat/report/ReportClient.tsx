@@ -1,4 +1,3 @@
-/* path: app/date-code/compat/report/ReportClient.tsx */
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -76,6 +75,7 @@ type GetResp =
       text: string;
       hasText: boolean;
       paid: boolean;
+      paymentStatus?: string | null;
     }
   | { ok: false; error: string; hint?: string };
 
@@ -184,6 +184,10 @@ function storageKeyCompat(dob1: string, name1: string, dob2: string, name2: stri
   return `date_code_compat_${dob1}_${name1}_${dob2}_${name2}`.slice(0, 140);
 }
 
+function normalizeStatus(v: any): string {
+  return String(v || '').trim().toUpperCase();
+}
+
 export default function ReportClient() {
   const sp = useSearchParams();
 
@@ -202,6 +206,7 @@ export default function ReportClient() {
   const [text, setText] = useState('');
   const [info, setInfo] = useState('');
   const [paid, setPaid] = useState(false);
+  const [paymentStatus, setPaymentStatus] = useState('');
 
   const [toast, setToast] = useState('');
   const toastOn = Boolean(toast);
@@ -230,7 +235,7 @@ export default function ReportClient() {
     if (pollRef.current) return;
     pollRef.current = setInterval(() => {
       fetchFromDb(true);
-    }, 2000);
+    }, 2500);
   };
 
   useEffect(() => {
@@ -268,6 +273,7 @@ export default function ReportClient() {
     } catch {}
 
     fetchFromDb(false);
+    startPoll();
 
     return () => stopPoll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -323,12 +329,24 @@ export default function ReportClient() {
       if (selFromDb) setDbSelected(selFromDb);
 
       const isPaid = Boolean(j.paid === true);
-      setPaid(isPaid);
+      const repStatus = normalizeStatus(rep?.status);
+      const hasReadyText = Boolean(j.hasText && j.text);
 
-      if (j.hasText && j.text) {
+      setPaid(isPaid);
+      setPaymentStatus(String(j.paymentStatus || ''));
+
+      if (hasReadyText) {
         stopPoll();
         setText(String(j.text));
         setInfo('');
+        setErr('');
+        setLoading(false);
+        return;
+      }
+
+      if (repStatus === 'FAILED') {
+        stopPoll();
+        setErr(rep?.errorText || rep?.errorCode || 'ANALYZE_FAILED');
         setLoading(false);
         return;
       }
@@ -337,24 +355,35 @@ export default function ReportClient() {
       const age1x = payload?.age1 ?? (rep?.input?.age1 ?? null);
       const age2x = payload?.age2 ?? (rep?.input?.age2 ?? null);
 
-      if (!isPaid) {
-        analyzeStartedRef.current = false;
-        setText('');
-        setInfo('Ожидаем подтверждение оплаты…');
-        startPoll();
+      if (!rep) {
+        setInfo('Отчёт ещё не найден.');
         setLoading(false);
         return;
       }
 
-      stopPoll();
+      if (!isPaid) {
+        setText('');
+        setInfo('Ожидаем подтверждение оплаты…');
+        setLoading(false);
+        startPoll();
+        return;
+      }
+
+      if (repStatus === 'ANALYZING' || repStatus === 'PROCESSING') {
+        setInfo('Оплата подтверждена. Готовим разбор…');
+        setLoading(false);
+        startPoll();
+        return;
+      }
 
       if (!selectedNow) {
         setInfo('Данные для анализа не найдены.');
         setLoading(false);
+        startPoll();
         return;
       }
 
-      if (!analyzeStartedRef.current) {
+      if (!analyzeStartedRef.current && (repStatus === 'DRAFT' || !repStatus)) {
         analyzeStartedRef.current = true;
         setInfo('Оплата подтверждена. Запускаем анализ…');
         setLoading(false);
@@ -371,7 +400,9 @@ export default function ReportClient() {
         return;
       }
 
+      setInfo('Оплата подтверждена. Ожидаем готовый отчёт…');
       setLoading(false);
+      startPoll();
     } catch (e: any) {
       if (!silent) {
         setErr(e?.message ? String(e.message) : 'NETWORK');
@@ -406,6 +437,7 @@ export default function ReportClient() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           initData,
+          reportId: dbReport?.id || reportId || undefined,
           dob1: p.dob1,
           name1: p.name1,
           age1: p.age1,
@@ -417,20 +449,30 @@ export default function ReportClient() {
       });
 
       const j = (await res.json().catch(() => null)) as any;
-      if (!res.ok || !j || j.ok !== true || typeof j.text !== 'string') {
+
+      if (!res.ok || !j || j.ok !== true) {
         setErr(j?.error ? String(j.error) : `ANALYZE_FAILED(${res.status})`);
         setLoading(false);
+        startPoll();
         return;
       }
 
-      setText(String(j.text));
-      setInfo('');
-      setLoading(false);
+      if (typeof j.text === 'string' && j.text.trim()) {
+        setText(String(j.text));
+        setInfo('');
+        setLoading(false);
+        stopPoll();
+        return;
+      }
 
+      setInfo('Анализ запущен. Ожидаем готовый отчёт…');
+      setLoading(false);
+      startPoll();
       fetchFromDb(true);
     } catch (e: any) {
       setErr(e?.message ? String(e.message) : 'NETWORK');
       setLoading(false);
+      startPoll();
     }
   };
 
@@ -451,14 +493,23 @@ export default function ReportClient() {
 
   const showMeta = Boolean(dob1 || name1 || dob2 || name2 || dbSelected || payload);
   const ready = Boolean(text) && !loading && !err;
+  const repStatus = normalizeStatus(dbReport?.status);
+
+  const subtitle = ready
+    ? 'ОТЧЁТ ГОТОВ'
+    : loading
+      ? 'ПРОХОДИТ АНАЛИЗ...'
+      : !paid
+        ? 'ОЖИДАЕМ ОПЛАТУ...'
+        : repStatus === 'ANALYZING' || repStatus === 'PROCESSING'
+          ? 'ГОТОВИМ РАЗБОР...'
+          : 'ОЖИДАЕМ ОТЧЁТ...';
 
   return (
     <main className="p">
       <header className="hero">
         <div className="title">РАЗБОР</div>
-        <div className="subtitle">
-          {ready ? 'ОТЧЁТ ГОТОВ' : loading ? 'ПРОХОДИТ АНАЛИЗ...' : paid ? 'ОЖИДАЕМ ОТЧЁТ...' : 'ОЖИДАЕМ ОПЛАТУ...'}
-        </div>
+        <div className="subtitle">{subtitle}</div>
       </header>
 
       {toastOn ? (
@@ -489,6 +540,16 @@ export default function ReportClient() {
           <div className="hint">
             Оплата: <b>{paid ? 'подтверждена' : 'ожидается'}</b>
           </div>
+          {paymentStatus ? (
+            <div className="hint">
+              Статус платежа: <b>{paymentStatus}</b>
+            </div>
+          ) : null}
+          {repStatus ? (
+            <div className="hint">
+              Статус отчёта: <b>{repStatus}</b>
+            </div>
+          ) : null}
         </section>
       ) : null}
 
