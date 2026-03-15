@@ -1,4 +1,3 @@
-/* path: app/api/palm/analyze/route.ts */
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { prisma } from '@/lib/prisma';
@@ -14,6 +13,7 @@ type TgUser = {
 };
 
 type Handedness = 'RIGHT' | 'LEFT' | 'AMBI';
+
 type OptionKey =
   | 'HEART'
   | 'HEAD'
@@ -23,6 +23,8 @@ type OptionKey =
   | 'MERCURY'
   | 'MOUNTS'
   | 'HANDS_DIFF';
+
+const ALL_KEYS: OptionKey[] = ['HEART', 'HEAD', 'LIFE', 'FATE', 'SUN', 'MERCURY', 'MOUNTS', 'HANDS_DIFF'];
 
 function envClean(name: string) {
   return String(process.env[name] ?? '').replace(/[\r\n]/g, '').trim();
@@ -90,14 +92,29 @@ function verifyTelegramWebAppInitData(initData: string, botToken: string, maxAge
   return { ok: true as const, user };
 }
 
-function pickSelected(selected: Record<string, any> | null | undefined): OptionKey[] {
-  const keys: OptionKey[] = ['HEART', 'HEAD', 'LIFE', 'FATE', 'SUN', 'MERCURY', 'MOUNTS', 'HANDS_DIFF'];
-  const out: OptionKey[] = [];
-  if (!selected || typeof selected !== 'object') return out;
-  for (const k of keys) {
-    if (selected[k] === true) out.push(k);
-  }
-  return out;
+function safeNum(v: any): number | null {
+  if (v === null || v === undefined) return null;
+  const n = Number(v);
+  if (!Number.isFinite(n)) return null;
+  return n;
+}
+
+function normalizeSelected(v: any): Record<OptionKey, boolean> {
+  const src = v && typeof v === 'object' ? v : {};
+  return {
+    HEART: src.HEART === true,
+    HEAD: src.HEAD === true,
+    LIFE: src.LIFE === true,
+    FATE: src.FATE === true,
+    SUN: src.SUN === true,
+    MERCURY: src.MERCURY === true,
+    MOUNTS: src.MOUNTS === true,
+    HANDS_DIFF: src.HANDS_DIFF === true,
+  };
+}
+
+function pickSelected(selected: Record<OptionKey, boolean>): OptionKey[] {
+  return ALL_KEYS.filter((k) => selected[k] === true);
 }
 
 function optionTitle(k: OptionKey) {
@@ -119,18 +136,35 @@ function optionTitle(k: OptionKey) {
     case 'HANDS_DIFF':
       return 'Разница между руками';
     default:
-      return k;
+      return String(k);
   }
 }
 
-function safeNum(v: any): number | null {
-  if (v === null || v === undefined) return null;
-  const n = Number(v);
-  if (!Number.isFinite(n)) return null;
-  return n;
+function sameSelectedList(a: any, b: any): boolean {
+  try {
+    const aa = Array.isArray(a) ? a.map(String) : [];
+    const bb = Array.isArray(b) ? b.map(String) : [];
+    return JSON.stringify(aa) === JSON.stringify(bb);
+  } catch {
+    return false;
+  }
 }
 
-function buildPrompt(args: { handedness: Handedness; dob: string; age: number | null; selectedList: OptionKey[] }) {
+function lc(v: any) {
+  return String(v ?? '').trim().toLowerCase();
+}
+
+function isPaidByPricing(pricingJson: any): boolean {
+  const status = lc(pricingJson?.yookassa?.status);
+  return ['succeeded', 'paid', 'success', 'captured', 'waiting_for_capture', 'authorized'].includes(status);
+}
+
+function buildPrompt(args: {
+  handedness: Handedness;
+  dob: string;
+  age: number | null;
+  selectedList: OptionKey[];
+}) {
   const selectedTitles = args.selectedList.map((k) => optionTitle(k)).join('\n');
   const ageLine = Number.isFinite(args.age as any) && args.age !== null ? String(args.age) : '';
 
@@ -138,11 +172,11 @@ function buildPrompt(args: { handedness: Handedness; dob: string; age: number | 
     'Ты — эксперт по чтению ладони. Проанализируй ДВА фото ладоней: фото №1 — левая, фото №2 — правая.',
     '',
     'КРИТИЧЕСКИЕ ПРАВИЛА ВЫВОДА:',
-    '1) Никаких символов Markdown: НЕ используй ##, **, *, _, `, >, и любые “оформлялки”. Не используй списки с тире. Только обычный текст.',
-    '2) Не пиши фразы и оговорки типа “развлекательная интерпретация”, “не медицина”, “не диагностика”, “обратитесь к врачу” и т.п. Вообще не упоминай это.',
-    '3) Не делай вступление/пролог. Сразу начинай с пункта 1).',
+    '1) Никаких символов Markdown: НЕ используй ##, **, *, _, `, > и любые оформлялки. Не используй списки с тире. Только обычный текст.',
+    '2) Не пиши оговорки вроде “развлекательная интерпретация”, “не медицина”, “не диагностика”, “обратитесь к врачу”. Вообще не упоминай это.',
+    '3) Не делай вступление. Сразу начинай с пункта 1).',
     '4) Не задавай вопросов пользователю.',
-    '5) Если что-то плохо видно на фото — скажи кратко: “на фото видно нечетко” и НЕ придумывай детали.',
+    '5) Если что-то плохо видно на фото — скажи кратко: “на фото видно нечетко” и не придумывай детали.',
     '',
     'ДАННЫЕ ПОЛЬЗОВАТЕЛЯ:',
     `handedness: ${args.handedness}`,
@@ -152,19 +186,19 @@ function buildPrompt(args: { handedness: Handedness; dob: string; age: number | 
     'ПРАВИЛО АКТИВНОЙ РУКИ:',
     'RIGHT: активная правая, пассивная левая',
     'LEFT: активная левая, пассивная правая',
-    'AMBI: активная та, которой чаще пользуются (ориентируйся на более выраженную/четкую, но без вопросов)',
+    'AMBI: активная та, которой чаще пользуются; если неясно — ориентируйся на более выраженную руку, без вопросов пользователю',
     '',
     'ФОРМАТ ОТВЕТА (СТРОГО):',
     'Пункты только в виде 1), 2), 3)… в порядке, который дан в СПИСКЕ ПУНКТОВ НИЖЕ.',
-    'Каждый пункт должен содержать ровно 4 блока в таком порядке и с такими метками:',
+    'Каждый пункт должен содержать ровно 4 блока в таком порядке:',
     'А) Что видно:',
     'Б) Значение:',
     'В) Риск-зона:',
     'Г) Практика (5 советов):',
     '',
-    'ТРЕБОВАНИЯ К СОДЕРЖАНИЮ (максимум конкретики):',
+    'ТРЕБОВАНИЯ К СОДЕРЖАНИЮ:',
     'А) Что видно:',
-    'Пиши конкретные визуальные признаки: где проходит линия, длинная/короткая, глубокая/тонкая, ровная/ломаная, есть ли разрывы, островки, ветви, направление, четкость на левой и на правой.',
+    'Пиши конкретные визуальные признаки: где проходит линия, длинная или короткая, глубокая или тонкая, ровная или ломаная, есть ли разрывы, островки, ветви, направление, четкость на левой и на правой.',
     'Обязательно сравни левую и правую и сделай вывод “на активной выражено сильнее/слабее”, если это видно.',
     'Если не видно — “на фото видно нечетко” и только безопасное наблюдение.',
     '',
@@ -174,7 +208,7 @@ function buildPrompt(args: { handedness: Handedness; dob: string; age: number | 
     '',
     'В) Риск-зона:',
     '1–2 конкретных сценария, где человек сам себе мешает. Формат: “когда происходит X, вы делаете Y, итог Z”.',
-    'Без общих слов. Никаких “возможно”, “может быть” без причины. Если не уверен — скажи “по фото видно нечетко” и дай мягкую версию.',
+    'Без общих слов. Если не уверен — скажи “по фото видно нечетко” и дай мягкую версию.',
     '',
     'Г) Практика (5 советов):',
     'Ровно 5 советов.',
@@ -185,19 +219,19 @@ function buildPrompt(args: { handedness: Handedness; dob: string; age: number | 
     'СПИСОК ПУНКТОВ ДЛЯ РАЗБОРА (ИМЕННО ИХ И ТОЛЬКО ИХ):',
     selectedTitles,
     '',
-    'ПОСЛЕ ВСЕХ ПУНКТОВ ДОБАВЬ ДВА ДОПОЛНИТЕЛЬНЫХ БЛОКА (БЕЗ ЛЮБЫХ НОМЕРОВ И БЕЗ "N" И "N+1"):',
+    'ПОСЛЕ ВСЕХ ПУНКТОВ ДОБАВЬ ДВА ДОПОЛНИТЕЛЬНЫХ БЛОКА:',
     'Общий вывод:',
     '6–9 предложений.',
-    'Объедини главные повторяющиеся темы из пунктов: сильные стороны, основной стиль поведения, ключевой ограничитель, куда “растёт” активная рука относительно пассивной.',
+    'Объедини главные повторяющиеся темы из пунктов: сильные стороны, основной стиль поведения, ключевой ограничитель, куда растёт активная рука относительно пассивной.',
     '',
     'Общие советы:',
     'Ровно 7 советов, каждый с новой строки, формат: "1) ...", "2) ...", "3) ...".',
     'Только действия: правила, привычки, коммуникация, работа, режим, границы, фокус.',
-    'Без воды, без повторов советов из пунктов (должны быть более широкими и стратегическими).',
+    'Без воды и без повторов советов из пунктов.',
     '',
     'Ограничение объёма: каждый пункт 12–18 строк максимум.',
     '',
-    'Начинай ответ сразу с “1) …” и далее по списку.',
+    'Начинай ответ сразу с “1) …”.',
     '',
     'Фото:',
     'Фото №1 — левая ладонь',
@@ -208,7 +242,10 @@ function buildPrompt(args: { handedness: Handedness; dob: string; age: number | 
 async function callOpenAI(args: { apiKey: string; prompt: string; leftUrl: string; rightUrl: string }) {
   const res = await fetch('https://api.openai.com/v1/responses', {
     method: 'POST',
-    headers: { Authorization: `Bearer ${args.apiKey}`, 'Content-Type': 'application/json' },
+    headers: {
+      Authorization: `Bearer ${args.apiKey}`,
+      'Content-Type': 'application/json',
+    },
     body: JSON.stringify({
       model: 'gpt-5.2',
       reasoning: { effort: 'low' },
@@ -231,17 +268,21 @@ async function callOpenAI(args: { apiKey: string; prompt: string; leftUrl: strin
       (j?.error?.message ? String(j.error.message) : '') ||
       (j?.error ? JSON.stringify(j.error) : '') ||
       `OPENAI_FAILED(${res.status})`;
+
     return { ok: false as const, error: msg, raw: j };
   }
 
   let outText = '';
+
   if (typeof j.output_text === 'string' && j.output_text.trim()) {
     outText = j.output_text.trim();
   } else if (Array.isArray(j.output)) {
     for (const item of j.output) {
       if (item?.type === 'message' && Array.isArray(item.content)) {
         for (const c of item.content) {
-          if (c?.type === 'output_text' && typeof c.text === 'string') outText += c.text;
+          if (c?.type === 'output_text' && typeof c.text === 'string') {
+            outText += c.text;
+          }
         }
       }
     }
@@ -258,34 +299,50 @@ export async function POST(req: Request) {
 
   try {
     const apiKey = envClean('OPENAI_API_KEY');
-    if (!apiKey) return NextResponse.json({ ok: false, error: 'NO_OPENAI_API_KEY' }, { status: 500 });
+    if (!apiKey) {
+      return NextResponse.json({ ok: false, error: 'NO_OPENAI_API_KEY' }, { status: 500 });
+    }
 
     const botToken = envClean('TELEGRAM_BOT_TOKEN');
-    if (!botToken) return NextResponse.json({ ok: false, error: 'NO_BOT_TOKEN' }, { status: 500 });
+    if (!botToken) {
+      return NextResponse.json({ ok: false, error: 'NO_BOT_TOKEN' }, { status: 500 });
+    }
 
     const body = (await req.json().catch(() => null)) as any;
-    if (!body) return NextResponse.json({ ok: false, error: 'BAD_JSON' }, { status: 400 });
+    if (!body) {
+      return NextResponse.json({ ok: false, error: 'BAD_JSON' }, { status: 400 });
+    }
 
     const initData = String(body.initData || '').trim();
     scanId = String(body.scanId || '').trim();
+    reportId = String(body.reportId || '').trim() || null;
 
     const handedness = String(body.handedness || '').trim() as Handedness;
     const dob = String(body.dob || '').trim();
     const age = safeNum(body.age);
 
-    const selectedFromReq = body.selected as Record<string, any> | undefined;
+    const selectedFixed = normalizeSelected(body.selected);
+    const wantedList = pickSelected(selectedFixed);
 
     if (!initData) return NextResponse.json({ ok: false, error: 'NO_INIT_DATA' }, { status: 401 });
     if (!scanId) return NextResponse.json({ ok: false, error: 'NO_SCAN_ID' }, { status: 400 });
-    if (!['RIGHT', 'LEFT', 'AMBI'].includes(handedness)) return NextResponse.json({ ok: false, error: 'BAD_HANDEDNESS' }, { status: 400 });
+    if (!['RIGHT', 'LEFT', 'AMBI'].includes(handedness)) {
+      return NextResponse.json({ ok: false, error: 'BAD_HANDEDNESS' }, { status: 400 });
+    }
     if (!dob) return NextResponse.json({ ok: false, error: 'NO_DOB' }, { status: 400 });
+    if (!wantedList.length) return NextResponse.json({ ok: false, error: 'NO_SELECTED' }, { status: 400 });
 
     const v = verifyTelegramWebAppInitData(initData, botToken);
     if (!v.ok) return NextResponse.json({ ok: false, error: v.error }, { status: 401 });
 
-    const telegramId = v.user.id;
-    const user = await prisma.user.findUnique({ where: { telegramId }, select: { id: true } });
-    if (!user) return NextResponse.json({ ok: false, error: 'NO_USER' }, { status: 404 });
+    const user = await prisma.user.findUnique({
+      where: { telegramId: v.user.id },
+      select: { id: true },
+    });
+
+    if (!user) {
+      return NextResponse.json({ ok: false, error: 'NO_USER' }, { status: 404 });
+    }
 
     const scan = await prisma.palmScan.findUnique({
       where: { id: scanId },
@@ -305,96 +362,252 @@ export async function POST(req: Request) {
 
     const leftUrl = String(scan.leftImageUrl || '').trim();
     const rightUrl = String(scan.rightImageUrl || '').trim();
-    if (!leftUrl || !rightUrl) return NextResponse.json({ ok: false, error: 'NO_PHOTOS' }, { status: 400 });
+
+    if (!leftUrl || !rightUrl) {
+      return NextResponse.json({ ok: false, error: 'NO_PHOTOS' }, { status: 400 });
+    }
+
+    let currentReport: any = null;
+
+    if (reportId) {
+      currentReport = await prisma.report.findFirst({
+        where: {
+          id: reportId,
+          userId: user.id,
+          type: 'PALM',
+          palmScanId: scanId,
+        },
+        select: {
+          id: true,
+          status: true,
+          text: true,
+          input: true,
+          pricingJson: true,
+          errorCode: true,
+          errorText: true,
+          json: true,
+        },
+      });
+
+      if (!currentReport) {
+        return NextResponse.json({ ok: false, error: 'REPORT_NOT_FOUND' }, { status: 404 });
+      }
+    } else {
+      currentReport = await prisma.report.findFirst({
+        where: {
+          userId: user.id,
+          type: 'PALM',
+          palmScanId: scanId,
+        },
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          status: true,
+          text: true,
+          input: true,
+          pricingJson: true,
+          errorCode: true,
+          errorText: true,
+          json: true,
+        },
+      });
+
+      if (!currentReport) {
+        return NextResponse.json({ ok: false, error: 'REPORT_NOT_FOUND' }, { status: 404 });
+      }
+
+      reportId = currentReport.id;
+    }
+
+    if (!isPaidByPricing(currentReport.pricingJson)) {
+      return NextResponse.json({ ok: false, error: 'PAYMENT_NOT_CONFIRMED' }, { status: 402 });
+    }
+
+    if (
+      String(currentReport.status || '').toUpperCase() === 'READY' &&
+      typeof currentReport.text === 'string' &&
+      currentReport.text.trim()
+    ) {
+      if (scan.status !== 'READY' || !scan.aiText) {
+        await prisma.palmScan.update({
+          where: { id: scanId },
+          data: {
+            status: 'READY',
+            aiText: currentReport.text,
+            aiJson: currentReport.json ?? scan.aiJson ?? null,
+            errorCode: null,
+            errorText: null,
+          },
+        });
+      }
+
+      return NextResponse.json({ ok: true, text: currentReport.text, cached: true });
+    }
 
     if (scan.status === 'READY' && scan.aiText) {
+      await prisma.report.update({
+        where: { id: reportId! },
+        data: {
+          status: 'READY',
+          text: scan.aiText,
+          json: scan.aiJson ?? currentReport.json ?? null,
+          errorCode: null,
+          errorText: null,
+        },
+      });
+
       return NextResponse.json({ ok: true, text: scan.aiText, cached: true });
     }
 
-    const lastAnyReport = await prisma.report.findFirst({
-      where: { userId: user.id, type: 'PALM', palmScanId: scanId },
+    const lastReady = await prisma.report.findFirst({
+      where: {
+        userId: user.id,
+        type: 'PALM',
+        palmScanId: scanId,
+        status: 'READY',
+      },
       orderBy: { createdAt: 'desc' },
-      select: { id: true, status: true, input: true, text: true },
+      select: {
+        id: true,
+        text: true,
+        input: true,
+        json: true,
+      },
     });
 
-    if (lastAnyReport?.status === 'READY' && lastAnyReport.text) {
-      await prisma.palmScan.update({ where: { id: scanId }, data: { status: 'READY', aiText: lastAnyReport.text } });
-      return NextResponse.json({ ok: true, text: lastAnyReport.text, cached: true });
+    if (lastReady?.text) {
+      const prevList = (lastReady.input as any)?.selectedList;
+      if (sameSelectedList(prevList, wantedList)) {
+        const inputJson = {
+          scanId,
+          handedness,
+          dob,
+          age,
+          selected: selectedFixed,
+          selectedList: wantedList,
+          leftUrl,
+          rightUrl,
+          analyzedAt: new Date().toISOString(),
+        };
+
+        await prisma.report.update({
+          where: { id: reportId! },
+          data: {
+            status: 'READY',
+            text: lastReady.text,
+            input: inputJson,
+            json: lastReady.json ?? null,
+            errorCode: null,
+            errorText: null,
+          },
+        });
+
+        await prisma.palmScan.update({
+          where: { id: scanId },
+          data: {
+            status: 'READY',
+            aiText: lastReady.text,
+            aiJson: lastReady.json ?? null,
+            errorCode: null,
+            errorText: null,
+            qualityFlag: false,
+            qualityNote: null,
+          },
+        });
+
+        return NextResponse.json({ ok: true, text: lastReady.text, cached: true });
+      }
     }
-
-    const selectedObj =
-      selectedFromReq ??
-      ((lastAnyReport?.input && typeof lastAnyReport.input === 'object' && (lastAnyReport.input as any).selected)
-        ? (lastAnyReport.input as any).selected
-        : undefined);
-
-    const selectedList = pickSelected(selectedObj);
-    if (!selectedList.length) return NextResponse.json({ ok: false, error: 'NO_SELECTED' }, { status: 400 });
-
-    await prisma.palmScan.update({
-      where: { id: scanId },
-      data: { status: 'ANALYZING', errorCode: null, errorText: null, qualityFlag: false, qualityNote: null },
-    });
-
-    const draft = await prisma.report.findFirst({
-      where: { userId: user.id, type: 'PALM', palmScanId: scanId, status: 'DRAFT' },
-      orderBy: { createdAt: 'desc' },
-      select: { id: true },
-    });
 
     const inputJson = {
       scanId,
       handedness,
       dob,
       age,
-      selected: selectedObj ?? null,
-      selectedList,
+      selected: selectedFixed,
+      selectedList: wantedList,
       leftUrl,
       rightUrl,
       analyzedAt: new Date().toISOString(),
     };
 
-    if (draft) {
-      reportId = draft.id;
-      await prisma.report.update({ where: { id: reportId }, data: { input: inputJson } });
-    } else {
-      const created = await prisma.report.create({
-        data: { userId: user.id, type: 'PALM', status: 'DRAFT', palmScanId: scanId, input: inputJson },
-        select: { id: true },
-      });
-      reportId = created.id;
-    }
+    await prisma.report.update({
+      where: { id: reportId! },
+      data: {
+        status: 'ANALYZING',
+        input: inputJson,
+        errorCode: null,
+        errorText: null,
+      },
+    });
 
-    const prompt = buildPrompt({ handedness, dob, age, selectedList });
+    await prisma.palmScan.update({
+      where: { id: scanId },
+      data: {
+        status: 'ANALYZING',
+        errorCode: null,
+        errorText: null,
+        qualityFlag: false,
+        qualityNote: null,
+      },
+    });
+
+    const prompt = buildPrompt({
+      handedness,
+      dob,
+      age,
+      selectedList: wantedList,
+    });
+
     const ai = await callOpenAI({ apiKey, prompt, leftUrl, rightUrl });
 
     if (!ai.ok) {
       await prisma.palmScan.update({
         where: { id: scanId },
-        data: { status: 'FAILED', errorCode: 'OPENAI_FAILED', errorText: String(ai.error || 'OPENAI_FAILED') },
+        data: {
+          status: 'FAILED',
+          errorCode: 'OPENAI_FAILED',
+          errorText: String(ai.error || 'OPENAI_FAILED'),
+        },
       });
 
-      if (reportId) {
-        await prisma.report.update({
-          where: { id: reportId },
-          data: { status: 'FAILED', errorCode: 'OPENAI_FAILED', errorText: String(ai.error || 'OPENAI_FAILED'), json: ai.raw ?? null },
-        });
-      }
+      await prisma.report.update({
+        where: { id: reportId! },
+        data: {
+          status: 'FAILED',
+          errorCode: 'OPENAI_FAILED',
+          errorText: String(ai.error || 'OPENAI_FAILED'),
+          json: ai.raw ?? null,
+        },
+      });
 
-      return NextResponse.json({ ok: false, error: String(ai.error || 'OPENAI_FAILED') }, { status: 500 });
+      return NextResponse.json(
+        { ok: false, error: String(ai.error || 'OPENAI_FAILED') },
+        { status: 500 }
+      );
     }
 
     await prisma.palmScan.update({
       where: { id: scanId },
-      data: { status: 'READY', aiText: ai.text, aiJson: ai.raw ?? null, errorCode: null, errorText: null },
+      data: {
+        status: 'READY',
+        aiText: ai.text,
+        aiJson: ai.raw ?? null,
+        errorCode: null,
+        errorText: null,
+      },
     });
 
-    if (reportId) {
-      await prisma.report.update({
-        where: { id: reportId },
-        data: { status: 'READY', text: ai.text, json: ai.raw ?? null, errorCode: null, errorText: null },
-      });
-    }
+    await prisma.report.update({
+      where: { id: reportId! },
+      data: {
+        status: 'READY',
+        text: ai.text,
+        json: ai.raw ?? null,
+        errorCode: null,
+        errorText: null,
+      },
+    });
 
     return NextResponse.json({ ok: true, text: ai.text, cached: false });
   } catch (e: any) {
@@ -402,13 +615,27 @@ export async function POST(req: Request) {
 
     try {
       if (scanId) {
-        await prisma.palmScan.update({ where: { id: scanId }, data: { status: 'FAILED', errorCode: 'SERVER_ERROR', errorText: msg } });
+        await prisma.palmScan.update({
+          where: { id: scanId },
+          data: {
+            status: 'FAILED',
+            errorCode: 'SERVER_ERROR',
+            errorText: msg,
+          },
+        });
       }
     } catch {}
 
     try {
       if (reportId) {
-        await prisma.report.update({ where: { id: reportId }, data: { status: 'FAILED', errorCode: 'SERVER_ERROR', errorText: msg } });
+        await prisma.report.update({
+          where: { id: reportId },
+          data: {
+            status: 'FAILED',
+            errorCode: 'SERVER_ERROR',
+            errorText: msg,
+          },
+        });
       }
     } catch {}
 
