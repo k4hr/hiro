@@ -1,5 +1,5 @@
-/* path: app/api/yookassa/create-payment/route.ts */
 import { NextResponse } from 'next/server';
+import crypto from 'crypto';
 import { prisma } from '@/lib/prisma';
 import { makeIdempotenceKey } from '@/lib/yookassa';
 
@@ -7,10 +7,82 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 type Body = {
+  initData: string;
   reportId: string;
   description?: string;
   returnPath?: string;
 };
+
+type TgUser = {
+  id: string;
+  username: string | null;
+  first_name: string | null;
+  last_name: string | null;
+};
+
+function envClean(name: string) {
+  return String(process.env[name] ?? '').replace(/[\r\n]/g, '').trim();
+}
+
+function timingSafeEqualHex(a: string, b: string) {
+  try {
+    const ab = Buffer.from(a, 'hex');
+    const bb = Buffer.from(b, 'hex');
+    if (ab.length !== bb.length) return false;
+    return crypto.timingSafeEqual(ab, bb);
+  } catch {
+    return false;
+  }
+}
+
+function verifyTelegramWebAppInitData(initData: string, botToken: string, maxAgeSec = 60 * 60 * 24) {
+  const params = new URLSearchParams(initData);
+  const hash = params.get('hash');
+  if (!hash) return { ok: false as const, error: 'NO_HASH' as const };
+
+  const authDateStr = params.get('auth_date');
+  if (!authDateStr) return { ok: false as const, error: 'NO_AUTH_DATE' as const };
+
+  const authDate = Number(authDateStr);
+  if (!Number.isFinite(authDate)) return { ok: false as const, error: 'BAD_AUTH_DATE' as const };
+
+  const nowSec = Math.floor(Date.now() / 1000);
+  if (authDate > nowSec + 60) return { ok: false as const, error: 'AUTH_DATE_IN_FUTURE' as const };
+  if (nowSec - authDate > maxAgeSec) return { ok: false as const, error: 'INITDATA_EXPIRED' as const };
+
+  params.delete('hash');
+
+  const dataCheckString = [...params.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([k, v]) => `${k}=${v}`)
+    .join('\n');
+
+  const secretKey = crypto.createHmac('sha256', 'WebAppData').update(botToken).digest();
+  const computedHash = crypto.createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
+
+  if (!timingSafeEqualHex(computedHash, hash)) return { ok: false as const, error: 'BAD_HASH' as const };
+
+  const userStr = params.get('user');
+  if (!userStr) return { ok: false as const, error: 'NO_USER' as const };
+
+  let userJson: any;
+  try {
+    userJson = JSON.parse(userStr);
+  } catch {
+    return { ok: false as const, error: 'BAD_USER_JSON' as const };
+  }
+
+  if (!userJson?.id) return { ok: false as const, error: 'NO_USER_ID' as const };
+
+  const user: TgUser = {
+    id: String(userJson.id),
+    username: userJson.username ? String(userJson.username) : null,
+    first_name: userJson.first_name ? String(userJson.first_name) : null,
+    last_name: userJson.last_name ? String(userJson.last_name) : null,
+  };
+
+  return { ok: true as const, user };
+}
 
 function getOrigin(req: Request) {
   const h = req.headers;
@@ -52,20 +124,17 @@ export async function POST(req: Request) {
   try {
     const proxyBase = getRuProxyBase();
     if (!proxyBase) {
-      console.log('[YOOKASSA_CREATE_PAYMENT] missing YOOKASSA_RU_PROXY_BASE');
-      return NextResponse.json(
-        { ok: false, error: 'YOOKASSA_RU_PROXY_BASE_MISSING' },
-        { status: 500 }
-      );
+      return NextResponse.json({ ok: false, error: 'YOOKASSA_RU_PROXY_BASE_MISSING' }, { status: 500 });
     }
 
     const receiptEmail = getReceiptEmail();
     if (!receiptEmail) {
-      console.log('[YOOKASSA_CREATE_PAYMENT] missing YOOKASSA_RECEIPT_EMAIL');
-      return NextResponse.json(
-        { ok: false, error: 'YOOKASSA_RECEIPT_EMAIL_MISSING' },
-        { status: 500 }
-      );
+      return NextResponse.json({ ok: false, error: 'YOOKASSA_RECEIPT_EMAIL_MISSING' }, { status: 500 });
+    }
+
+    const botToken = envClean('TELEGRAM_BOT_TOKEN');
+    if (!botToken) {
+      return NextResponse.json({ ok: false, error: 'NO_BOT_TOKEN' }, { status: 500 });
     }
 
     const body = (await req.json().catch(() => null)) as Body | null;
@@ -73,13 +142,33 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: 'BAD_JSON' }, { status: 400 });
     }
 
+    const initData = String(body.initData ?? '').trim();
     const reportId = String(body.reportId ?? '').trim();
+
+    if (!initData) {
+      return NextResponse.json({ ok: false, error: 'NO_INIT_DATA' }, { status: 401 });
+    }
+
     if (!reportId) {
       return NextResponse.json({ ok: false, error: 'NO_REPORT_ID' }, { status: 400 });
     }
 
-    const report = await prisma.report.findUnique({
-      where: { id: reportId },
+    const v = verifyTelegramWebAppInitData(initData, botToken);
+    if (!v.ok) {
+      return NextResponse.json({ ok: false, error: v.error }, { status: 401 });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { telegramId: v.user.id },
+      select: { id: true },
+    });
+
+    if (!user) {
+      return NextResponse.json({ ok: false, error: 'NO_USER' }, { status: 404 });
+    }
+
+    const report = await prisma.report.findFirst({
+      where: { id: reportId, userId: user.id },
       select: {
         id: true,
         userId: true,
@@ -107,12 +196,6 @@ export async function POST(req: Request) {
 
     const origin = getOrigin(req);
     if (!origin) {
-      console.log('[YOOKASSA_CREATE_PAYMENT] no origin', {
-        host: req.headers.get('host'),
-        xForwardedHost: req.headers.get('x-forwarded-host'),
-        xForwardedProto: req.headers.get('x-forwarded-proto'),
-      });
-
       return NextResponse.json({ ok: false, error: 'NO_ORIGIN' }, { status: 500 });
     }
 
@@ -159,15 +242,6 @@ export async function POST(req: Request) {
       idempotenceKey: makeIdempotenceKey('yk'),
     };
 
-    console.log('[YOOKASSA_CREATE_PAYMENT_PROXY_REQUEST]', {
-      proxyUrl: `${proxyBase}/create-payment`,
-      reportId: report.id,
-      totalRub,
-      returnUrl,
-      description,
-      receiptEmail,
-    });
-
     const r = await fetch(`${proxyBase}/create-payment`, {
       method: 'POST',
       headers: {
@@ -179,15 +253,7 @@ export async function POST(req: Request) {
 
     const data = await readJsonSafe(r);
 
-    console.log('[YOOKASSA_CREATE_PAYMENT_PROXY_RESPONSE]', {
-      status: r.status,
-      ok: r.ok,
-      data,
-    });
-
     if (!r.ok || !(data as any)?.ok) {
-      console.log('[YOOKASSA_CREATE_PAYMENT_PROXY_ERROR_DETAILS]', data);
-
       return NextResponse.json(
         {
           ok: false,
@@ -206,56 +272,38 @@ export async function POST(req: Request) {
     const paymentStatus = String((data as any)?.status ?? 'pending').trim();
 
     if (!paymentId) {
-      return NextResponse.json(
-        {
-          ok: false,
-          error: 'NO_PAYMENT_ID',
-          details: data,
-        },
-        { status: 500 }
-      );
+      return NextResponse.json({ ok: false, error: 'NO_PAYMENT_ID', details: data }, { status: 500 });
     }
 
     if (!confirmationUrl) {
-      return NextResponse.json(
-        {
-          ok: false,
-          error: 'NO_CONFIRMATION_URL',
-          details: data,
-        },
-        { status: 500 }
-      );
+      return NextResponse.json({ ok: false, error: 'NO_CONFIRMATION_URL', details: data }, { status: 500 });
     }
 
-    try {
-      const prev =
-        report.pricingJson && typeof report.pricingJson === 'object'
-          ? (report.pricingJson as any)
-          : {};
+    const prev =
+      report.pricingJson && typeof report.pricingJson === 'object'
+        ? (report.pricingJson as any)
+        : {};
 
-      await prisma.report.update({
-        where: { id: report.id },
-        data: {
-          pricingJson: {
-            ...prev,
-            yookassa: {
-              ...(prev?.yookassa ?? {}),
-              paymentId,
-              status: paymentStatus || 'pending',
-              returnUrl,
-              createdAt: new Date().toISOString(),
-              amount: {
-                value: totalRub.toFixed(2),
-                currency: 'RUB',
-              },
-              receiptEmail,
+    await prisma.report.update({
+      where: { id: report.id },
+      data: {
+        pricingJson: {
+          ...prev,
+          yookassa: {
+            ...(prev?.yookassa ?? {}),
+            paymentId,
+            status: paymentStatus || 'pending',
+            returnUrl,
+            createdAt: new Date().toISOString(),
+            amount: {
+              value: totalRub.toFixed(2),
+              currency: 'RUB',
             },
+            receiptEmail,
           },
         },
-      });
-    } catch (e: any) {
-      console.log('[YOOKASSA_CREATE_PAYMENT_PRICINGJSON_UPDATE_ERROR]', String(e?.message ?? e));
-    }
+      },
+    });
 
     return NextResponse.json({
       ok: true,
@@ -267,8 +315,6 @@ export async function POST(req: Request) {
       openInTelegram: true,
     });
   } catch (e: any) {
-    console.log('[YOOKASSA_CREATE_PAYMENT_FATAL]', String(e?.message ?? e));
-
     return NextResponse.json(
       {
         ok: false,
