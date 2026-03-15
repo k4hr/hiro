@@ -1,4 +1,3 @@
-/* path: app/date-code/date/page.tsx */
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -18,7 +17,6 @@ function haptic(type: 'light' | 'medium' = 'light') {
   } catch {}
 }
 
-/* cookie helpers */
 function getCookie(name: string): string {
   try {
     const rows = document.cookie ? document.cookie.split('; ') : [];
@@ -136,12 +134,48 @@ export default function DateCodeDatePage() {
   const options = useMemo(
     () =>
       [
-        { key: 'LIFE_PATH' as const, title: 'Число жизненного пути', sub: 'Главная тема и вектор жизни', price: PRICE_RUB, fixed: false },
-        { key: 'BIRTHDAY' as const, title: 'Число дня рождения', sub: 'Врождённый талант и стиль', price: PRICE_RUB, fixed: false },
-        { key: 'DIGITS' as const, title: 'Сильные/пустые цифры', sub: 'Что усилено и что прокачивать', price: PRICE_RUB, fixed: false },
-        { key: 'PERIODS' as const, title: 'Периоды и вызовы', sub: 'Этапы жизни и ключевые уроки', price: PRICE_RUB, fixed: false },
-        { key: 'YEAR12' as const, title: 'Личный год + 12 месяцев', sub: 'Прогноз по циклам на год', price: PRICE_RUB, fixed: false },
-        { key: 'SUMMARY' as const, title: 'Итог + общие советы', sub: 'Сводка и 7 стратегических правил', price: SUMMARY_PRICE_RUB, fixed: true },
+        {
+          key: 'LIFE_PATH' as const,
+          title: 'Число жизненного пути',
+          sub: 'Главная тема и вектор жизни',
+          price: PRICE_RUB,
+          fixed: false,
+        },
+        {
+          key: 'BIRTHDAY' as const,
+          title: 'Число дня рождения',
+          sub: 'Врождённый талант и стиль',
+          price: PRICE_RUB,
+          fixed: false,
+        },
+        {
+          key: 'DIGITS' as const,
+          title: 'Сильные/пустые цифры',
+          sub: 'Что усилено и что прокачивать',
+          price: PRICE_RUB,
+          fixed: false,
+        },
+        {
+          key: 'PERIODS' as const,
+          title: 'Периоды и вызовы',
+          sub: 'Этапы жизни и ключевые уроки',
+          price: PRICE_RUB,
+          fixed: false,
+        },
+        {
+          key: 'YEAR12' as const,
+          title: 'Личный год + 12 месяцев',
+          sub: 'Прогноз по циклам на год',
+          price: PRICE_RUB,
+          fixed: false,
+        },
+        {
+          key: 'SUMMARY' as const,
+          title: 'Итог + общие советы',
+          sub: 'Сводка и 7 стратегических правил',
+          price: SUMMARY_PRICE_RUB,
+          fixed: true,
+        },
       ] as const,
     []
   );
@@ -215,7 +249,6 @@ export default function DateCodeDatePage() {
     } catch {}
 
     try {
-      // 1) submit -> reportId
       const sRes = await fetch('/api/num/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -240,13 +273,20 @@ export default function DateCodeDatePage() {
 
       const reportId = String(sJson.reportId);
 
-      // 2) create payment
-      const returnPath = `/date-code/date/report?dob=${encodeURIComponent(dobStr)}&reportId=${encodeURIComponent(reportId)}`;
+      const returnPath =
+        `/date-code/date/report?dob=${encodeURIComponent(dobStr)}` +
+        `&reportId=${encodeURIComponent(reportId)}`;
+
+      if (sJson.alreadyPaid === true) {
+        router.push(returnPath);
+        return;
+      }
 
       const pRes = await fetch('/api/yookassa/create-payment', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          initData,
           reportId,
           description: 'Код судьбы · разбор даты рождения',
           returnPath,
@@ -262,6 +302,7 @@ export default function DateCodeDatePage() {
         return;
       }
 
+      setSubmitting(false);
       openPaymentUrl(paymentUrl);
     } catch (e: any) {
       setSubmitting(false);
@@ -300,16 +341,31 @@ export default function DateCodeDatePage() {
 
           <div className="dobField">
             <div className="dobLabel">Месяц</div>
-            <input ref={mmRef} value={mm} onChange={(e) => onMonthChange(e.target.value)} inputMode="numeric" placeholder="ММ" />
+            <input
+              ref={mmRef}
+              value={mm}
+              onChange={(e) => onMonthChange(e.target.value)}
+              inputMode="numeric"
+              placeholder="ММ"
+            />
           </div>
 
           <div className="dobField">
             <div className="dobLabel">Год</div>
-            <input ref={yyyyRef} value={yyyy} onChange={(e) => onYearChange(e.target.value)} inputMode="numeric" placeholder="ГГГГ" />
+            <input
+              ref={yyyyRef}
+              value={yyyy}
+              onChange={(e) => onYearChange(e.target.value)}
+              inputMode="numeric"
+              placeholder="ГГГГ"
+            />
           </div>
         </div>
 
-        {dd || mm || yyyy ? (dobOk ? <div className="hint center">Ок: {dobStr}</div> : <div className="warn center">Проверь дату.</div>) : null}
+        {dd || mm || yyyy ? (
+          dobOk ? <div className="hint center">Ок: {dobStr}</div> : <div className="warn center">Проверь дату.</div>
+        ) : null}
+
         {dobOk && age !== null ? (
           <div className="hint center">
             Вам — <b>{age}</b> лет
@@ -326,6 +382,7 @@ export default function DateCodeDatePage() {
             {options.map((o) => {
               const on = selected[o.key];
               const isFixed = o.fixed === true;
+
               return (
                 <button
                   key={o.key}
