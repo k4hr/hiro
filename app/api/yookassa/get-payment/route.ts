@@ -1,5 +1,5 @@
-/* path: app/api/yookassa/get-payment/route.ts */
 import { NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -55,13 +55,61 @@ export async function GET(req: Request) {
       );
     }
 
+    const remotePaymentId = String((data as any)?.id ?? paymentId).trim();
+    const status = String((data as any)?.status ?? '').trim();
+    const paid = Boolean((data as any)?.paid);
+    const amount = (data as any)?.amount ?? null;
+    const metadata = (data as any)?.metadata ?? null;
+
+    const rep = await prisma.report.findFirst({
+      where: {
+        pricingJson: {
+          path: ['yookassa', 'paymentId'],
+          equals: remotePaymentId,
+        } as any,
+      },
+      select: {
+        id: true,
+        pricingJson: true,
+      },
+    }).catch(() => null);
+
+    if (rep) {
+      const prev =
+        rep.pricingJson && typeof rep.pricingJson === 'object'
+          ? (rep.pricingJson as any)
+          : {};
+
+      const nextPricing = {
+        ...prev,
+        yookassa: {
+          ...(prev?.yookassa ?? {}),
+          paymentId: remotePaymentId,
+          status: status || prev?.yookassa?.status || null,
+          syncedAt: new Date().toISOString(),
+          amount: amount ?? prev?.yookassa?.amount ?? null,
+          metadata: metadata ?? prev?.yookassa?.metadata ?? null,
+        },
+      };
+
+      if (paid || String(status).toLowerCase() === 'succeeded') {
+        (nextPricing as any).yookassa.paidAt =
+          prev?.yookassa?.paidAt || new Date().toISOString();
+      }
+
+      await prisma.report.update({
+        where: { id: rep.id },
+        data: { pricingJson: nextPricing },
+      });
+    }
+
     return NextResponse.json({
       ok: true,
-      id: (data as any)?.id ?? null,
-      status: (data as any)?.status ?? null,
-      paid: (data as any)?.paid ?? null,
-      amount: (data as any)?.amount ?? null,
-      metadata: (data as any)?.metadata ?? null,
+      id: remotePaymentId,
+      status,
+      paid,
+      amount,
+      metadata,
     });
   } catch (e: any) {
     return NextResponse.json(
