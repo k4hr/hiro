@@ -1,4 +1,4 @@
-/* path: app/api/reports/list/route.ts */
+/* path: app/api/compat/get/route.ts */
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { prisma } from '@/lib/prisma';
@@ -77,13 +77,17 @@ function verifyTelegramWebAppInitData(initData: string, botToken: string, maxAge
   return { ok: true as const, user };
 }
 
-function isPaidReport(pricingJson: any): boolean {
-  try {
-    const status = String(pricingJson?.yookassa?.status ?? '').trim().toLowerCase();
-    return status === 'succeeded';
-  } catch {
-    return false;
-  }
+function parseDobToUtcDate(dob: string): Date | null {
+  if (!/^\d{2}\.\d{2}\.\d{4}$/.test(dob)) return null;
+  const [dd, mm, yyyy] = dob.split('.');
+  const iso = `${yyyy}-${mm}-${dd}T00:00:00.000Z`;
+  const dt = new Date(iso);
+  if (!Number.isFinite(dt.getTime())) return null;
+  return dt;
+}
+
+function cleanName(v: any): string {
+  return String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, 64);
 }
 
 export async function POST(req: Request) {
@@ -95,6 +99,12 @@ export async function POST(req: Request) {
     if (!body) return NextResponse.json({ ok: false, error: 'BAD_JSON' }, { status: 400 });
 
     const initData = String(body.initData || '').trim();
+    const reportId = String(body.reportId || '').trim();
+    const dob1 = String(body.dob1 || '').trim();
+    const dob2 = String(body.dob2 || '').trim();
+    const name1 = cleanName(body.name1);
+    const name2 = cleanName(body.name2);
+
     if (!initData) return NextResponse.json({ ok: false, error: 'NO_INIT_DATA' }, { status: 401 });
 
     const v = verifyTelegramWebAppInitData(initData, botToken);
@@ -108,68 +118,83 @@ export async function POST(req: Request) {
 
     if (!user) return NextResponse.json({ ok: false, error: 'NO_USER' }, { status: 404 });
 
-    const rows = await prisma.report.findMany({
-      where: { userId: user.id },
-      orderBy: { createdAt: 'desc' },
-      select: {
-        id: true,
-        type: true,
-        status: true,
-        createdAt: true,
-        updatedAt: true,
+    let last: any = null;
 
-        numMode: true,
-        numDob1: true,
-        numName1: true,
-        numDob2: true,
-        numName2: true,
+    if (reportId) {
+      last = await prisma.report.findFirst({
+        where: {
+          id: reportId,
+          userId: user.id,
+          type: 'NUM',
+          numMode: 'COMPAT',
+        },
+        select: {
+          id: true,
+          status: true,
+          createdAt: true,
+          errorCode: true,
+          errorText: true,
+          input: true,
+          text: true,
+          pricingJson: true,
+        },
+      });
+    } else {
+      if (!dob1 || !dob2) return NextResponse.json({ ok: false, error: 'NO_DOB' }, { status: 400 });
+      if (!name1 || !name2) return NextResponse.json({ ok: false, error: 'NO_NAME' }, { status: 400 });
 
-        astroMode: true,
-        astroDob: true,
-        astroCity: true,
-        astroTime: true,
-        astroDob2: true,
-        astroCity2: true,
-        astroTime2: true,
+      const d1 = parseDobToUtcDate(dob1);
+      const d2 = parseDobToUtcDate(dob2);
+      if (!d1 || !d2) return NextResponse.json({ ok: false, error: 'BAD_DOB' }, { status: 400 });
 
-        palmScanId: true,
-        input: true,
-        pricingJson: true,
-      },
-    });
+      last = await prisma.report.findFirst({
+        where: {
+          userId: user.id,
+          type: 'NUM',
+          numMode: 'COMPAT',
+          numDob1: d1,
+          numDob2: d2,
+          numName1: name1,
+          numName2: name2,
+        },
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          status: true,
+          createdAt: true,
+          errorCode: true,
+          errorText: true,
+          input: true,
+          text: true,
+          pricingJson: true,
+        },
+      });
+    }
 
-    const paidRows = rows.filter((r) => isPaidReport(r.pricingJson));
+    const hasText = Boolean(last?.status === 'READY' && last?.text);
+    const ykStatus = String((last?.pricingJson as any)?.yookassa?.status ?? '').toLowerCase();
+    const paid = ykStatus === 'succeeded';
 
     return NextResponse.json({
       ok: true,
-      items: paidRows.map((r) => ({
-        id: r.id,
-        type: r.type,
-        status: r.status,
-        createdAt: r.createdAt.toISOString(),
-        updatedAt: r.updatedAt.toISOString(),
-
-        numMode: r.numMode,
-        numDob1: r.numDob1 ? r.numDob1.toISOString() : null,
-        numName1: r.numName1 ?? null,
-        numDob2: r.numDob2 ? r.numDob2.toISOString() : null,
-        numName2: r.numName2 ?? null,
-
-        astroMode: r.astroMode ?? null,
-        astroDob: r.astroDob ? r.astroDob.toISOString() : null,
-        astroCity: r.astroCity ?? null,
-        astroTime: r.astroTime ?? null,
-        astroDob2: r.astroDob2 ? r.astroDob2.toISOString() : null,
-        astroCity2: r.astroCity2 ?? null,
-        astroTime2: r.astroTime2 ?? null,
-
-        palmScanId: r.palmScanId ?? null,
-        input: r.input ?? null,
-      })),
+      report: last
+        ? {
+            id: last.id,
+            status: last.status,
+            createdAt: last.createdAt.toISOString(),
+            errorCode: last.errorCode,
+            errorText: last.errorText,
+            input: last.input,
+          }
+        : null,
+      text: hasText ? String(last!.text) : '',
+      hasText,
+      paid,
     });
   } catch (e: any) {
+    console.error(e);
     return NextResponse.json(
-      { ok: false, error: 'LIST_FAILED', hint: String(e?.message || 'See server logs') },
+      { ok: false, error: 'GET_FAILED', hint: String(e?.message || 'See server logs') },
       { status: 500 }
     );
   }
