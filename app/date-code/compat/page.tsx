@@ -37,6 +37,25 @@ function getInitDataNow(): string {
   return String(getCookie('tg_init_data') || '').trim();
 }
 
+function openPaymentUrl(url: string) {
+  const clean = String(url || '').trim();
+  if (!clean) return;
+
+  try {
+    window.location.assign(clean);
+    return;
+  } catch {}
+
+  try {
+    window.location.href = clean;
+    return;
+  } catch {}
+
+  try {
+    tg()?.openLink?.(clean);
+  } catch {}
+}
+
 const PRICE_RUB = 39;
 const SUMMARY_PRICE_RUB = 49;
 
@@ -151,12 +170,48 @@ export default function DateCodeCompatPage() {
   const options = useMemo(
     () =>
       [
-        { key: 'COMPAT_RESONANCE' as const, title: 'Резонанс “моё имя ↔ его путь” и “его имя ↔ мой путь”', sub: 'Два направления влияния и как это ощущается', price: PRICE_RUB, fixed: false },
-        { key: 'COMPAT_GOOD' as const, title: 'Сильные зоны пары', sub: 'Где легко: поддержка, рост, стабильность', price: PRICE_RUB, fixed: false },
-        { key: 'COMPAT_BAD' as const, title: 'Слабые зоны пары', sub: 'Где ломает: триггеры, обиды, разный темп', price: PRICE_RUB, fixed: false },
-        { key: 'COMPAT_TALKS' as const, title: 'Как договариваться (ключ к миру)', sub: 'Правила коммуникации под вашу связку', price: PRICE_RUB, fixed: false },
-        { key: 'COMPAT_MONEY_HOME' as const, title: 'Деньги и быт (правила пары)', sub: 'Роли, траты, ответственность, чтобы не ругаться', price: PRICE_RUB, fixed: false },
-        { key: 'COMPAT_FORMULA' as const, title: 'Итог', sub: 'Формула пары, куда двигаться', price: SUMMARY_PRICE_RUB, fixed: true },
+        {
+          key: 'COMPAT_RESONANCE' as const,
+          title: 'Резонанс “моё имя ↔ его путь” и “его имя ↔ мой путь”',
+          sub: 'Два направления влияния и как это ощущается',
+          price: PRICE_RUB,
+          fixed: false,
+        },
+        {
+          key: 'COMPAT_GOOD' as const,
+          title: 'Сильные зоны пары',
+          sub: 'Где легко: поддержка, рост, стабильность',
+          price: PRICE_RUB,
+          fixed: false,
+        },
+        {
+          key: 'COMPAT_BAD' as const,
+          title: 'Слабые зоны пары',
+          sub: 'Где ломает: триггеры, обиды, разный темп',
+          price: PRICE_RUB,
+          fixed: false,
+        },
+        {
+          key: 'COMPAT_TALKS' as const,
+          title: 'Как договариваться (ключ к миру)',
+          sub: 'Правила коммуникации под вашу связку',
+          price: PRICE_RUB,
+          fixed: false,
+        },
+        {
+          key: 'COMPAT_MONEY_HOME' as const,
+          title: 'Деньги и быт (правила пары)',
+          sub: 'Роли, траты, ответственность, чтобы не ругаться',
+          price: PRICE_RUB,
+          fixed: false,
+        },
+        {
+          key: 'COMPAT_FORMULA' as const,
+          title: 'Итог',
+          sub: 'Формула пары, куда двигаться',
+          price: SUMMARY_PRICE_RUB,
+          fixed: true,
+        },
       ] as const,
     []
   );
@@ -177,7 +232,13 @@ export default function DateCodeCompatPage() {
   };
 
   const paidCount = useMemo(() => {
-    const keys: OptionKey[] = ['COMPAT_RESONANCE', 'COMPAT_GOOD', 'COMPAT_BAD', 'COMPAT_TALKS', 'COMPAT_MONEY_HOME'];
+    const keys: OptionKey[] = [
+      'COMPAT_RESONANCE',
+      'COMPAT_GOOD',
+      'COMPAT_BAD',
+      'COMPAT_TALKS',
+      'COMPAT_MONEY_HOME',
+    ];
     return keys.filter((k) => selected[k] === true).length;
   }, [selected]);
 
@@ -265,25 +326,13 @@ export default function DateCodeCompatPage() {
       });
 
       const sJson = (await sRes.json().catch(() => null)) as any;
-
-      if (!sRes.ok) {
+      if (!sRes.ok || !sJson || sJson.ok !== true || typeof sJson.reportId !== 'string') {
         setSubmitting(false);
-        setSubmitErr(sJson?.error ? String(sJson.error) : `SUBMIT_HTTP_${sRes.status}`);
+        setSubmitErr(sJson?.error ? String(sJson.error) : `SUBMIT_FAILED(${sRes.status})`);
         return;
       }
 
-      if (!sJson || sJson.ok !== true) {
-        setSubmitting(false);
-        setSubmitErr(sJson?.error ? String(sJson.error) : 'SUBMIT_BAD_RESPONSE');
-        return;
-      }
-
-      const reportId = String(sJson?.reportId || '').trim();
-      if (!reportId) {
-        setSubmitting(false);
-        setSubmitErr(`SUBMIT_NO_REPORT_ID: ${JSON.stringify(sJson)}`);
-        return;
-      }
+      const reportId = String(sJson.reportId);
 
       const returnPath =
         `/date-code/compat/report?dob1=${encodeURIComponent(payload.dob1)}` +
@@ -303,19 +352,15 @@ export default function DateCodeCompatPage() {
       });
 
       const pJson = (await pRes.json().catch(() => null)) as any;
-      const confirmationUrl = String(pJson?.confirmationUrl ?? '');
+      const paymentUrl = String(pJson?.url || pJson?.confirmationUrl || '').trim();
 
-      if (!pRes.ok || !pJson || pJson.ok !== true || !confirmationUrl) {
+      if (!pRes.ok || !pJson || pJson.ok !== true || !paymentUrl) {
         setSubmitting(false);
         setSubmitErr(pJson?.error ? String(pJson.error) : `PAYMENT_CREATE_FAILED(${pRes.status})`);
         return;
       }
 
-      try {
-        tg()?.openLink?.(confirmationUrl);
-      } catch {
-        window.location.href = confirmationUrl;
-      }
+      openPaymentUrl(paymentUrl);
     } catch (e: any) {
       setSubmitting(false);
       setSubmitErr(e?.message ? String(e.message) : 'NETWORK_ERROR');
@@ -360,7 +405,9 @@ export default function DateCodeCompatPage() {
           </div>
         </div>
 
-        {dd1 || mm1 || yyyy1 ? (dob1Ok ? <div className="hint center">Ок: {dob1Str}</div> : <div className="warn center">Проверь дату.</div>) : null}
+        {dd1 || mm1 || yyyy1 ? (
+          dob1Ok ? <div className="hint center">Ок: {dob1Str}</div> : <div className="warn center">Проверь дату.</div>
+        ) : null}
         {dob1Ok && age1 !== null ? (
           <div className="hint center">
             Вам — <b>{age1}</b> лет
@@ -368,10 +415,19 @@ export default function DateCodeCompatPage() {
         ) : null}
 
         <div className="nameBox">
-          <input value={name1} onChange={(e) => setName1(e.target.value)} placeholder="Ваше имя" inputMode="text" autoComplete="off" spellCheck={false} />
+          <input
+            value={name1}
+            onChange={(e) => setName1(e.target.value)}
+            placeholder="Ваше имя"
+            inputMode="text"
+            autoComplete="off"
+            spellCheck={false}
+          />
         </div>
 
-        {name1 ? (name1Ok ? <div className="hint center">Ок: {name1Clean}</div> : <div className="warn center">Имя слишком короткое.</div>) : null}
+        {name1 ? (
+          name1Ok ? <div className="hint center">Ок: {name1Clean}</div> : <div className="warn center">Имя слишком короткое.</div>
+        ) : null}
       </section>
 
       <section className="card" aria-label="Данные партнёра">
@@ -393,7 +449,9 @@ export default function DateCodeCompatPage() {
           </div>
         </div>
 
-        {dd2 || mm2 || yyyy2 ? (dob2Ok ? <div className="hint center">Ок: {dob2Str}</div> : <div className="warn center">Проверь дату.</div>) : null}
+        {dd2 || mm2 || yyyy2 ? (
+          dob2Ok ? <div className="hint center">Ок: {dob2Str}</div> : <div className="warn center">Проверь дату.</div>
+        ) : null}
         {dob2Ok && age2 !== null ? (
           <div className="hint center">
             Партнёру — <b>{age2}</b> лет
@@ -401,10 +459,19 @@ export default function DateCodeCompatPage() {
         ) : null}
 
         <div className="nameBox">
-          <input value={name2} onChange={(e) => setName2(e.target.value)} placeholder="Имя партнёра" inputMode="text" autoComplete="off" spellCheck={false} />
+          <input
+            value={name2}
+            onChange={(e) => setName2(e.target.value)}
+            placeholder="Имя партнёра"
+            inputMode="text"
+            autoComplete="off"
+            spellCheck={false}
+          />
         </div>
 
-        {name2 ? (name2Ok ? <div className="hint center">Ок: {name2Clean}</div> : <div className="warn center">Имя слишком короткое.</div>) : null}
+        {name2 ? (
+          name2Ok ? <div className="hint center">Ок: {name2Clean}</div> : <div className="warn center">Имя слишком короткое.</div>
+        ) : null}
       </section>
 
       {baseOk ? (
@@ -416,6 +483,7 @@ export default function DateCodeCompatPage() {
             {options.map((o) => {
               const on = selected[o.key];
               const isFixed = o.fixed === true;
+
               return (
                 <button
                   key={o.key}
@@ -429,7 +497,13 @@ export default function DateCodeCompatPage() {
                     <div className="optS">{o.sub}</div>
                   </div>
                   <div className="optR">
-                    {isFixed ? <span className="fixed">✓ {o.price} ₽</span> : on ? <span className="tick">✓</span> : <span className="plus">+{o.price} ₽</span>}
+                    {isFixed ? (
+                      <span className="fixed">✓ {o.price} ₽</span>
+                    ) : on ? (
+                      <span className="tick">✓</span>
+                    ) : (
+                      <span className="plus">+{o.price} ₽</span>
+                    )}
                   </div>
                 </button>
               );
@@ -446,7 +520,12 @@ export default function DateCodeCompatPage() {
             <div className="totalR">{totalRub} ₽</div>
           </div>
 
-          <button type="button" className={`send ${submitDisabled ? 'send--off' : ''}`} disabled={submitDisabled} onClick={onSubmit}>
+          <button
+            type="button"
+            className={`send ${submitDisabled ? 'send--off' : ''}`}
+            disabled={submitDisabled}
+            onClick={onSubmit}
+          >
             {submitting ? 'Открываю оплату…' : 'Продолжить'}
           </button>
 
@@ -473,6 +552,7 @@ export default function DateCodeCompatPage() {
           align-items: center;
           gap: 12px;
         }
+
         .p > * {
           width: 100%;
           max-width: 520px;
@@ -641,8 +721,6 @@ export default function DateCodeCompatPage() {
           font-weight: 850;
           color: rgba(255, 180, 180, 0.95);
           overflow-wrap: anywhere;
-          padding-top: 10px;
-          border-top: 1px solid rgba(233, 236, 255, 0.1);
           text-align: center;
         }
 
@@ -809,6 +887,7 @@ export default function DateCodeCompatPage() {
           .dob {
             grid-template-columns: 1fr 1fr;
           }
+
           .dobField:last-child {
             grid-column: 1 / -1;
           }
