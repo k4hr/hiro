@@ -7,7 +7,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 type Body = {
-  initData: string;
+  initData?: string;
   reportId: string;
   description?: string;
   returnPath?: string;
@@ -120,6 +120,35 @@ async function readJsonSafe(res: Response) {
   }
 }
 
+function getCookieValue(req: Request, name: string): string {
+  try {
+    const raw = req.headers.get('cookie') || '';
+    if (!raw) return '';
+
+    const parts = raw.split(';');
+    for (const part of parts) {
+      const [k, ...rest] = part.trim().split('=');
+      if (decodeURIComponent(k) === name) {
+        return decodeURIComponent(rest.join('='));
+      }
+    }
+  } catch {}
+  return '';
+}
+
+function resolveInitData(req: Request, body: Body | null): string {
+  const fromBody = String(body?.initData ?? '').trim();
+  if (fromBody) return fromBody;
+
+  const fromHeader = String(req.headers.get('x-telegram-init-data') || '').trim();
+  if (fromHeader) return fromHeader;
+
+  const fromCookie = String(getCookieValue(req, 'tg_init_data') || '').trim();
+  if (fromCookie) return fromCookie;
+
+  return '';
+}
+
 export async function POST(req: Request) {
   try {
     const proxyBase = getRuProxyBase();
@@ -142,11 +171,18 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: 'BAD_JSON' }, { status: 400 });
     }
 
-    const initData = String(body.initData ?? '').trim();
+    const initData = resolveInitData(req, body);
     const reportId = String(body.reportId ?? '').trim();
 
     if (!initData) {
-      return NextResponse.json({ ok: false, error: 'NO_INIT_DATA' }, { status: 401 });
+      return NextResponse.json(
+        {
+          ok: false,
+          error: 'NO_INIT_DATA',
+          hint: 'Pass initData in body, x-telegram-init-data header, or tg_init_data cookie',
+        },
+        { status: 401 }
+      );
     }
 
     if (!reportId) {
