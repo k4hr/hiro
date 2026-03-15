@@ -187,6 +187,7 @@ function storageKeyCompat(dob1: string, name1: string, dob2: string, name2: stri
 export default function ReportClient() {
   const sp = useSearchParams();
 
+  const reportId = String(sp.get('reportId') || '').trim();
   const dob1 = String(sp.get('dob1') || '').trim();
   const name1 = String(sp.get('name1') || '').trim();
   const dob2 = String(sp.get('dob2') || '').trim();
@@ -270,7 +271,7 @@ export default function ReportClient() {
 
     return () => stopPoll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dob1, name1, dob2, name2]);
+  }, [dob1, name1, dob2, name2, reportId]);
 
   useEffect(() => {
     if (!toastOn) return;
@@ -295,7 +296,14 @@ export default function ReportClient() {
       const res = await fetch('/api/compat/get', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ initData, dob1, name1, dob2, name2 }),
+        body: JSON.stringify({
+          initData,
+          reportId,
+          dob1,
+          name1,
+          dob2,
+          name2,
+        }),
       });
 
       const j = (await res.json().catch(() => null)) as GetResp | null;
