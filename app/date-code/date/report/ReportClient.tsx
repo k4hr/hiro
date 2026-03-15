@@ -1,4 +1,3 @@
-/* path: app/date-code/date/report/ReportClient.tsx */
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -66,6 +65,7 @@ type GetResp =
       text: string;
       hasText: boolean;
       paid: boolean;
+      paymentStatus?: string | null;
     }
   | { ok: false; error: string; hint?: string };
 
@@ -73,10 +73,13 @@ function safeSelectedFromDb(input: any): Record<OptionKey, boolean> | null {
   try {
     const sel = input?.selected;
     if (!sel || typeof sel !== 'object') return null;
+
     const keys: OptionKey[] = ['LIFE_PATH', 'BIRTHDAY', 'DIGITS', 'PERIODS', 'YEAR12', 'SUMMARY'];
     const out: any = {};
+
     for (const k of keys) out[k] = sel[k] === true;
     out.SUMMARY = true;
+
     return out as Record<OptionKey, boolean>;
   } catch {
     return null;
@@ -160,9 +163,15 @@ async function copyToClipboard(text: string): Promise<boolean> {
   }
 }
 
+function normalizeStatus(v: any): string {
+  return String(v || '').trim().toUpperCase();
+}
+
 export default function ReportClient() {
   const sp = useSearchParams();
+
   const dob = String(sp.get('dob') || '').trim();
+  const reportId = String(sp.get('reportId') || '').trim();
 
   const [payload, setPayload] = useState<Payload | null>(null);
   const [dbReport, setDbReport] = useState<DbReport | null>(null);
@@ -173,6 +182,7 @@ export default function ReportClient() {
   const [text, setText] = useState('');
   const [info, setInfo] = useState('');
   const [paid, setPaid] = useState(false);
+  const [paymentStatus, setPaymentStatus] = useState('');
 
   const [toast, setToast] = useState('');
   const toastOn = Boolean(toast);
@@ -201,7 +211,7 @@ export default function ReportClient() {
     if (pollRef.current) return;
     pollRef.current = setInterval(() => {
       fetchFromDb(true);
-    }, 2000);
+    }, 2500);
   };
 
   useEffect(() => {
@@ -226,10 +236,11 @@ export default function ReportClient() {
     } catch {}
 
     fetchFromDb(false);
+    startPoll();
 
     return () => stopPoll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dob]);
+  }, [dob, reportId]);
 
   useEffect(() => {
     if (!toastOn) return;
@@ -254,7 +265,7 @@ export default function ReportClient() {
       const res = await fetch('/api/num/get', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ initData, mode: 'DATE', dob }),
+        body: JSON.stringify({ initData, mode: 'DATE', dob, reportId }),
       });
 
       const j = (await res.json().catch(() => null)) as GetResp | null;
@@ -274,50 +285,76 @@ export default function ReportClient() {
       if (selFromDb) setDbSelected(selFromDb);
 
       const isPaid = Boolean(j.paid === true);
+      const repStatus = normalizeStatus(rep?.status);
+
       setPaid(isPaid);
+      setPaymentStatus(String(j.paymentStatus || ''));
 
       if (j.hasText && j.text) {
         stopPoll();
         setText(String(j.text));
         setInfo('');
+        setErr('');
+        setLoading(false);
+        return;
+      }
+
+      if (repStatus === 'FAILED') {
+        stopPoll();
+        setErr(rep?.errorText || rep?.errorCode || 'ANALYZE_FAILED');
         setLoading(false);
         return;
       }
 
       const selectedNow = payload?.selected ?? selFromDb;
-      const age = payload?.age ?? (rep?.input?.age ?? null);
+      const ageNow = payload?.age ?? (rep?.input?.age ?? null);
+
+      if (!rep) {
+        setInfo('Отчёт ещё не найден.');
+        setLoading(false);
+        return;
+      }
 
       if (!isPaid) {
         analyzeStartedRef.current = false;
         setText('');
         setInfo('Ожидаем подтверждение оплаты…');
-        startPoll();
         setLoading(false);
+        startPoll();
         return;
       }
 
-      stopPoll();
+      if (repStatus === 'ANALYZING' || repStatus === 'PROCESSING') {
+        setInfo('Оплата подтверждена. Готовим разбор…');
+        setLoading(false);
+        startPoll();
+        return;
+      }
 
       if (!selectedNow) {
         setInfo('Данные для анализа не найдены.');
         setLoading(false);
+        startPoll();
         return;
       }
 
-      if (!analyzeStartedRef.current) {
+      if (!analyzeStartedRef.current && (repStatus === 'DRAFT' || !repStatus)) {
         analyzeStartedRef.current = true;
         setInfo('Оплата подтверждена. Запускаем анализ…');
         setLoading(false);
 
         runAnalyze({
+          reportId: rep.id || reportId || undefined,
           dob,
-          age,
+          age: ageNow,
           selected: selectedNow,
         });
         return;
       }
 
+      setInfo('Оплата подтверждена. Ожидаем готовый отчёт…');
       setLoading(false);
+      startPoll();
     } catch (e: any) {
       if (!silent) {
         setErr(e?.message ? String(e.message) : 'NETWORK');
@@ -326,7 +363,12 @@ export default function ReportClient() {
     }
   };
 
-  const runAnalyze = async (p: { dob: string; age: any; selected: Record<OptionKey, boolean> }) => {
+  const runAnalyze = async (p: {
+    reportId?: string;
+    dob: string;
+    age: any;
+    selected: Record<OptionKey, boolean>;
+  }) => {
     const initData = getInitDataNow();
     if (!initData) {
       setErr('NO_INIT_DATA');
@@ -344,6 +386,7 @@ export default function ReportClient() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           initData,
+          reportId: p.reportId,
           mode: 'DATE',
           dob: p.dob,
           age: p.age,
@@ -352,20 +395,30 @@ export default function ReportClient() {
       });
 
       const j = (await res.json().catch(() => null)) as any;
-      if (!res.ok || !j || j.ok !== true || typeof j.text !== 'string') {
+
+      if (!res.ok || !j || j.ok !== true) {
         setErr(j?.error ? String(j.error) : `ANALYZE_FAILED(${res.status})`);
         setLoading(false);
+        startPoll();
         return;
       }
 
-      setText(String(j.text));
-      setInfo('');
-      setLoading(false);
+      if (typeof j.text === 'string' && j.text.trim()) {
+        setText(String(j.text));
+        setInfo('');
+        setLoading(false);
+        stopPoll();
+        return;
+      }
 
+      setInfo('Анализ запущен. Ожидаем готовый отчёт…');
+      setLoading(false);
+      startPoll();
       fetchFromDb(true);
     } catch (e: any) {
       setErr(e?.message ? String(e.message) : 'NETWORK');
       setLoading(false);
+      startPoll();
     }
   };
 
@@ -384,14 +437,25 @@ export default function ReportClient() {
     setToast(ok ? 'Скопировано' : 'Не удалось скопировать');
   };
 
-  const showMeta = Boolean(dob || dbSelected || payload);
+  const showMeta = Boolean(dob || dbSelected || payload || dbReport);
   const ready = Boolean(text) && !loading && !err;
+  const repStatus = normalizeStatus(dbReport?.status);
+
+  const subtitle = ready
+    ? 'ОТЧЁТ ГОТОВ'
+    : loading
+      ? 'ПРОХОДИТ АНАЛИЗ...'
+      : !paid
+        ? 'ОЖИДАЕМ ОПЛАТУ...'
+        : repStatus === 'ANALYZING' || repStatus === 'PROCESSING'
+          ? 'ГОТОВИМ РАЗБОР...'
+          : 'ОЖИДАЕМ ОТЧЁТ...';
 
   return (
     <main className="p">
       <header className="hero">
         <div className="title">РАЗБОР</div>
-        <div className="subtitle">{ready ? 'ОТЧЁТ ГОТОВ' : loading ? 'ПРОХОДИТ АНАЛИЗ...' : paid ? 'ОЖИДАЕМ ОТЧЁТ...' : 'ОЖИДАЕМ ОПЛАТУ...'}</div>
+        <div className="subtitle">{subtitle}</div>
       </header>
 
       {toastOn ? (
@@ -422,6 +486,16 @@ export default function ReportClient() {
           <div className="hint">
             Оплата: <b>{paid ? 'подтверждена' : 'ожидается'}</b>
           </div>
+          {paymentStatus ? (
+            <div className="hint">
+              Статус платежа: <b>{paymentStatus}</b>
+            </div>
+          ) : null}
+          {repStatus ? (
+            <div className="hint">
+              Статус отчёта: <b>{repStatus}</b>
+            </div>
+          ) : null}
         </section>
       ) : null}
 
@@ -432,6 +506,12 @@ export default function ReportClient() {
             <div className="metaLine">
               <b>Дата:</b> {dob || '—'}
             </div>
+
+            {reportId || dbReport?.id ? (
+              <div className="metaLine">
+                <b>ReportId:</b> {reportId || dbReport?.id}
+              </div>
+            ) : null}
 
             {selectedKeysRu.length ? (
               <div className="metaLine">
