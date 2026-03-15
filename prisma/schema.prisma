@@ -1,4 +1,3 @@
-// prisma/schema.prisma
 generator client {
   provider = "prisma-client-js"
 }
@@ -17,6 +16,8 @@ enum ReportType {
 
 enum ReportStatus {
   DRAFT
+  ANALYZING
+  PROCESSING
   READY
   FAILED
 }
@@ -181,8 +182,8 @@ model Report {
   // ✅ ЦЕНЫ / ОПЛАТА (истина для ЮKassa)
   // priceRub — цена “модуля” (если применимо)
   // totalRub — итог к оплате за этот report
-  priceRub   Int   @default(0)
-  totalRub   Int   @default(0)
+  priceRub    Int   @default(0)
+  totalRub    Int   @default(0)
   pricingJson Json? @db.Json
 
   errorCode String?
