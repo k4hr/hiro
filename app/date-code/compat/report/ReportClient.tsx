@@ -83,10 +83,20 @@ function safeSelectedFromDb(input: any): Record<OptionKey, boolean> | null {
   try {
     const sel = input?.selected;
     if (!sel || typeof sel !== 'object') return null;
-    const keys: OptionKey[] = ['COMPAT_RESONANCE', 'COMPAT_GOOD', 'COMPAT_BAD', 'COMPAT_TALKS', 'COMPAT_MONEY_HOME', 'COMPAT_FORMULA'];
+
+    const keys: OptionKey[] = [
+      'COMPAT_RESONANCE',
+      'COMPAT_GOOD',
+      'COMPAT_BAD',
+      'COMPAT_TALKS',
+      'COMPAT_MONEY_HOME',
+      'COMPAT_FORMULA',
+    ];
+
     const out: any = {};
     for (const k of keys) out[k] = sel[k] === true;
     out.COMPAT_FORMULA = true;
+
     return out as Record<OptionKey, boolean>;
   } catch {
     return null;
@@ -106,7 +116,7 @@ function optionTitle(k: OptionKey) {
     case 'COMPAT_MONEY_HOME':
       return 'Деньги и быт (правила пары)';
     case 'COMPAT_FORMULA':
-      return 'Итог: формула пары (фраза + 7 правил)';
+      return 'Итог: формула пары';
     default:
       return String(k);
   }
@@ -187,13 +197,23 @@ export default function ReportClient() {
   const [dbSelected, setDbSelected] = useState<Record<OptionKey, boolean> | null>(null);
 
   const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState<string>('');
-  const [text, setText] = useState<string>('');
-  const [info, setInfo] = useState<string>('');
-  const [paid, setPaid] = useState<boolean>(false);
+  const [err, setErr] = useState('');
+  const [text, setText] = useState('');
+  const [info, setInfo] = useState('');
+  const [paid, setPaid] = useState(false);
 
-  const [toast, setToast] = useState<string>('');
+  const [toast, setToast] = useState('');
   const toastOn = Boolean(toast);
+
+  const selectedForUi = payload?.selected ?? dbSelected;
+
+  const selectedKeysRu = useMemo(() => {
+    const s = selectedForUi;
+    if (!s) return [];
+    return (Object.entries(s) as Array<[OptionKey, boolean]>)
+      .filter(([, v]) => v)
+      .map(([k]) => optionTitle(k));
+  }, [selectedForUi]);
 
   const analyzeStartedRef = useRef(false);
   const pollRef = useRef<any>(null);
@@ -211,16 +231,6 @@ export default function ReportClient() {
       fetchFromDb(true);
     }, 2000);
   };
-
-  const selectedForUi = payload?.selected ?? dbSelected;
-
-  const selectedKeysRu = useMemo(() => {
-    const s = selectedForUi;
-    if (!s) return [];
-    return (Object.entries(s) as Array<[OptionKey, boolean]>)
-      .filter(([, v]) => v)
-      .map(([k]) => optionTitle(k));
-  }, [selectedForUi]);
 
   useEffect(() => {
     try {
@@ -257,6 +267,8 @@ export default function ReportClient() {
     } catch {}
 
     fetchFromDb(false);
+
+    return () => stopPoll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dob1, name1, dob2, name2]);
 
@@ -265,10 +277,6 @@ export default function ReportClient() {
     const t = setTimeout(() => setToast(''), 1800);
     return () => clearTimeout(t);
   }, [toastOn]);
-
-  useEffect(() => {
-    return () => stopPoll();
-  }, []);
 
   const fetchFromDb = async (silent = false) => {
     const initData = getInitDataNow();
@@ -300,24 +308,24 @@ export default function ReportClient() {
         return;
       }
 
-      const rep = (j as any).report ?? null;
+      const rep = j.report ?? null;
       setDbReport(rep);
 
       const selFromDb = rep?.input ? safeSelectedFromDb(rep.input) : null;
       if (selFromDb) setDbSelected(selFromDb);
 
-      const isPaid = Boolean((j as any).paid === true);
+      const isPaid = Boolean(j.paid === true);
       setPaid(isPaid);
 
-      if ((j as any).hasText && (j as any).text) {
+      if (j.hasText && j.text) {
         stopPoll();
-        setText(String((j as any).text));
+        setText(String(j.text));
         setInfo('');
         setLoading(false);
         return;
       }
 
-      const s = payload?.selected ?? selFromDb;
+      const selectedNow = payload?.selected ?? selFromDb;
       const age1x = payload?.age1 ?? (rep?.input?.age1 ?? null);
       const age2x = payload?.age2 ?? (rep?.input?.age2 ?? null);
 
@@ -332,7 +340,7 @@ export default function ReportClient() {
 
       stopPoll();
 
-      if (!s) {
+      if (!selectedNow) {
         setInfo('Данные для анализа не найдены.');
         setLoading(false);
         return;
@@ -350,7 +358,7 @@ export default function ReportClient() {
           dob2,
           name2,
           age2: age2x,
-          selected: s,
+          selected: selectedNow,
         });
         return;
       }
@@ -418,38 +426,6 @@ export default function ReportClient() {
     }
   };
 
-  const forceAnalyze = () => {
-    haptic('medium');
-
-    const sel = payload?.selected ?? dbSelected;
-    const repInput = dbReport?.input ?? null;
-
-    const age1x = payload?.age1 ?? (repInput?.age1 ?? null);
-    const age2x = payload?.age2 ?? (repInput?.age2 ?? null);
-
-    if (!dob1 || !dob2) {
-      setErr('NO_DOB');
-      return;
-    }
-    if (!name1 || !name2) {
-      setErr('NO_NAME');
-      return;
-    }
-    if (!sel) {
-      setErr('NO_SELECTED_IN_DB');
-      setInfo('Нет сохранённых пунктов. Вернись назад и нажми “Продолжить” ещё раз.');
-      return;
-    }
-    if (!paid) {
-      setErr('PAYMENT_NOT_CONFIRMED');
-      setInfo('Сначала дождись подтверждения оплаты.');
-      return;
-    }
-
-    analyzeStartedRef.current = true;
-    runAnalyze({ dob1, name1, age1: age1x, dob2, name2, age2: age2x, selected: sel });
-  };
-
   const goBack = () => {
     haptic('light');
     try {
@@ -472,7 +448,9 @@ export default function ReportClient() {
     <main className="p">
       <header className="hero">
         <div className="title">РАЗБОР</div>
-        <div className="subtitle">{ready ? 'ОТЧЁТ ГОТОВ' : loading ? 'ПРОХОДИТ АНАЛИЗ...' : paid ? 'ОЖИДАЕМ ОТЧЁТ...' : 'ОЖИДАЕМ ОПЛАТУ...'}</div>
+        <div className="subtitle">
+          {ready ? 'ОТЧЁТ ГОТОВ' : loading ? 'ПРОХОДИТ АНАЛИЗ...' : paid ? 'ОЖИДАЕМ ОТЧЁТ...' : 'ОЖИДАЕМ ОПЛАТУ...'}
+        </div>
       </header>
 
       {toastOn ? (
@@ -485,7 +463,7 @@ export default function ReportClient() {
         <section className="card">
           <div className="label">Ошибка</div>
           <div className="warn">{err}</div>
-          <div className="row">
+          <div className="actionsGrid">
             <button type="button" className="btn" onClick={() => fetchFromDb(false)} disabled={loading}>
               Обновить
             </button>
@@ -536,7 +514,7 @@ export default function ReportClient() {
 
         {text ? <pre className="out">{text}</pre> : null}
 
-        <div className="row">
+        <div className="actionsGrid">
           <button type="button" className="btn2" onClick={onCopy} disabled={!ready}>
             Скопировать
           </button>
@@ -545,18 +523,9 @@ export default function ReportClient() {
           </button>
         </div>
 
-        <div className="row">
+        <div className="actionsSingle">
           <button type="button" className="btn" onClick={() => fetchFromDb(false)} disabled={loading}>
-            Обновить из БД
-          </button>
-          <button type="button" className="btn2" onClick={goBack}>
-            Назад
-          </button>
-        </div>
-
-        <div className="row">
-          <button type="button" className="btn3" onClick={forceAnalyze} disabled={loading || !paid}>
-            Пересоздать отчёт (OpenAI)
+            Обновить
           </button>
         </div>
       </section>
@@ -576,6 +545,7 @@ export default function ReportClient() {
           align-items: center;
           gap: 12px;
         }
+
         .p > * {
           width: 100%;
           max-width: 520px;
@@ -693,22 +663,31 @@ export default function ReportClient() {
           word-break: break-word;
         }
 
-        .row {
-          display: flex;
+        .actionsGrid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 10px;
+          margin-top: 4px;
+        }
+
+        .actionsSingle {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr);
           gap: 10px;
           margin-top: 4px;
         }
 
         .btn,
-        .btn2,
-        .btn3 {
-          flex: 1;
+        .btn2 {
+          width: 100%;
+          min-width: 0;
           border-radius: 999px;
           padding: 12px 14px;
           font-size: 14px;
           font-weight: 950;
           cursor: pointer;
           -webkit-tap-highlight-color: transparent;
+          text-align: center;
         }
 
         .btn {
@@ -719,8 +698,7 @@ export default function ReportClient() {
         }
 
         .btn:disabled,
-        .btn2:disabled,
-        .btn3:disabled {
+        .btn2:disabled {
           opacity: 0.55;
           cursor: not-allowed;
           box-shadow: none;
@@ -732,15 +710,8 @@ export default function ReportClient() {
           background: rgba(255, 255, 255, 0.03);
         }
 
-        .btn3 {
-          border: 1px solid rgba(233, 236, 255, 0.14);
-          color: rgba(233, 236, 255, 0.92);
-          background: rgba(255, 255, 255, 0.02);
-        }
-
         .btn:active,
-        .btn2:active,
-        .btn3:active {
+        .btn2:active {
           transform: scale(0.99);
           opacity: 0.92;
         }
@@ -769,6 +740,12 @@ export default function ReportClient() {
         .backBtn:active {
           transform: scale(0.99);
           opacity: 0.92;
+        }
+
+        @media (max-width: 420px) {
+          .actionsGrid {
+            grid-template-columns: 1fr;
+          }
         }
       `}</style>
     </main>
