@@ -1,4 +1,3 @@
-/* path: app/date-code/compat/page.tsx */
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -42,6 +41,14 @@ function openPaymentUrl(url: string) {
   if (!clean) return;
 
   try {
+    const w = tg();
+    if (w?.openLink) {
+      w.openLink(clean);
+      return;
+    }
+  } catch {}
+
+  try {
     window.location.assign(clean);
     return;
   } catch {}
@@ -49,10 +56,6 @@ function openPaymentUrl(url: string) {
   try {
     window.location.href = clean;
     return;
-  } catch {}
-
-  try {
-    tg()?.openLink?.(clean);
   } catch {}
 }
 
@@ -341,10 +344,16 @@ export default function DateCodeCompatPage() {
         `&name2=${encodeURIComponent(payload.name2)}` +
         `&reportId=${encodeURIComponent(reportId)}`;
 
+      if (sJson.alreadyPaid === true) {
+        router.push(returnPath);
+        return;
+      }
+
       const pRes = await fetch('/api/yookassa/create-payment', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          initData,
           reportId,
           description: 'Код судьбы · совместимость',
           returnPath,
@@ -360,6 +369,7 @@ export default function DateCodeCompatPage() {
         return;
       }
 
+      setSubmitting(false);
       openPaymentUrl(paymentUrl);
     } catch (e: any) {
       setSubmitting(false);
