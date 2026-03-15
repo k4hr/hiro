@@ -1,4 +1,3 @@
-/* path: app/api/palm/get/route.ts */
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { prisma } from '@/lib/prisma';
@@ -15,6 +14,12 @@ type TgUser = {
 
 function envClean(name: string) {
   return String(process.env[name] ?? '').replace(/[\r\n]/g, '').trim();
+}
+
+function getRuProxyBase() {
+  return String(process.env.YOOKASSA_RU_PROXY_BASE || '')
+    .trim()
+    .replace(/\/+$/, '');
 }
 
 function timingSafeEqualHex(a: string, b: string) {
@@ -79,6 +84,130 @@ function verifyTelegramWebAppInitData(initData: string, botToken: string, maxAge
   return { ok: true as const, user };
 }
 
+function lc(v: any) {
+  return String(v ?? '').trim().toLowerCase();
+}
+
+function extractPaid(last: any): boolean {
+  const reportStatus = lc(last?.status);
+
+  if (reportStatus === 'ready' || reportStatus === 'analyzing' || reportStatus === 'processing') {
+    return true;
+  }
+
+  const pricing = last?.pricingJson && typeof last.pricingJson === 'object' ? last.pricingJson : {};
+  const input = last?.input && typeof last.input === 'object' ? last.input : {};
+
+  const candidates = [
+    pricing?.yookassa?.status,
+    pricing?.payment?.status,
+    pricing?.paymentStatus,
+    pricing?.status,
+    input?.yookassa?.status,
+    input?.payment?.status,
+    input?.paymentStatus,
+    input?.status,
+  ]
+    .map((x) => lc(x))
+    .filter(Boolean);
+
+  return candidates.some((s) =>
+    ['succeeded', 'paid', 'success', 'captured', 'waiting_for_capture', 'authorized'].includes(s)
+  );
+}
+
+function extractPaymentStatus(last: any): string {
+  const pricing = last?.pricingJson && typeof last.pricingJson === 'object' ? last.pricingJson : {};
+  const input = last?.input && typeof last.input === 'object' ? last.input : {};
+
+  return (
+    String(
+      pricing?.yookassa?.status ??
+        pricing?.payment?.status ??
+        pricing?.paymentStatus ??
+        pricing?.status ??
+        input?.yookassa?.status ??
+        input?.payment?.status ??
+        input?.paymentStatus ??
+        input?.status ??
+        ''
+    ).trim() || null
+  ) as any;
+}
+
+async function readJsonSafe(res: Response) {
+  const text = await res.text().catch(() => '');
+  if (!text) return null;
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { _raw: text };
+  }
+}
+
+async function syncPaymentStatusFromProxy(last: any) {
+  try {
+    const paymentId = String((last?.pricingJson as any)?.yookassa?.paymentId ?? '').trim();
+    if (!paymentId) return last;
+
+    const currentStatus = lc((last?.pricingJson as any)?.yookassa?.status);
+    if (currentStatus === 'succeeded') return last;
+
+    const proxyBase = getRuProxyBase();
+    if (!proxyBase) return last;
+
+    const r = await fetch(`${proxyBase}/get-payment?paymentId=${encodeURIComponent(paymentId)}`, {
+      method: 'GET',
+      cache: 'no-store',
+      headers: {
+        Accept: 'application/json',
+      },
+    });
+
+    const data = await readJsonSafe(r);
+    if (!r.ok || !(data as any)?.ok) return last;
+
+    const remoteStatus = String((data as any)?.status ?? '').trim();
+    const remotePaid = Boolean((data as any)?.paid);
+    const remoteAmount = (data as any)?.amount ?? null;
+    const remoteMetadata = (data as any)?.metadata ?? null;
+
+    const nextPricing = {
+      ...((last?.pricingJson && typeof last.pricingJson === 'object') ? last.pricingJson : {}),
+      yookassa: {
+        ...(((last?.pricingJson as any)?.yookassa && typeof (last?.pricingJson as any)?.yookassa === 'object')
+          ? (last?.pricingJson as any).yookassa
+          : {}),
+        paymentId,
+        status: remoteStatus || (last?.pricingJson as any)?.yookassa?.status || null,
+        syncedAt: new Date().toISOString(),
+        amount: remoteAmount ?? (last?.pricingJson as any)?.yookassa?.amount ?? null,
+        metadata: remoteMetadata ?? (last?.pricingJson as any)?.yookassa?.metadata ?? null,
+      },
+    } as any;
+
+    if (remotePaid || lc(remoteStatus) === 'succeeded') {
+      nextPricing.yookassa.paidAt = nextPricing.yookassa.paidAt || new Date().toISOString();
+    }
+
+    await prisma.report.update({
+      where: { id: last.id },
+      data: {
+        pricingJson: nextPricing,
+      },
+    });
+
+    return {
+      ...last,
+      pricingJson: nextPricing,
+    };
+  } catch (e: any) {
+    console.log('[PALM_GET_PROXY_SYNC_ERROR]', String(e?.message ?? e));
+    return last;
+  }
+}
+
 export async function POST(req: Request) {
   try {
     const botToken = envClean('TELEGRAM_BOT_TOKEN');
@@ -89,6 +218,7 @@ export async function POST(req: Request) {
 
     const initData = String(body.initData || '').trim();
     const scanId = String(body.scanId || '').trim();
+    const reportId = String(body.reportId || '').trim();
 
     if (!initData) return NextResponse.json({ ok: false, error: 'NO_INIT_DATA' }, { status: 401 });
     if (!scanId) return NextResponse.json({ ok: false, error: 'NO_SCAN_ID' }, { status: 400 });
@@ -96,11 +226,11 @@ export async function POST(req: Request) {
     const v = verifyTelegramWebAppInitData(initData, botToken);
     if (!v.ok) return NextResponse.json({ ok: false, error: v.error }, { status: 401 });
 
-    const telegramId = v.user.id;
     const user = await prisma.user.findUnique({
-      where: { telegramId },
+      where: { telegramId: v.user.id },
       select: { id: true },
     });
+
     if (!user) return NextResponse.json({ ok: false, error: 'NO_USER' }, { status: 404 });
 
     const scan = await prisma.palmScan.findUnique({
@@ -121,55 +251,95 @@ export async function POST(req: Request) {
     if (!scan) return NextResponse.json({ ok: false, error: 'NO_SCAN' }, { status: 404 });
     if (scan.userId !== user.id) return NextResponse.json({ ok: false, error: 'FORBIDDEN' }, { status: 403 });
 
-    const lastReport = await prisma.report.findFirst({
-      where: { userId: user.id, type: 'PALM', palmScanId: scanId },
-      orderBy: { createdAt: 'desc' },
-      select: {
-        id: true,
-        status: true,
-        text: true,
-        input: true,
-        pricingJson: true, // ✅ нужно для paid
-        errorCode: true,
-        errorText: true,
-        createdAt: true,
-      },
-    });
+    let last: any = null;
 
-    const text = (scan.aiText && scan.aiText.trim()) || (lastReport?.text && lastReport.text.trim()) || '';
-    const input = lastReport?.input ?? null;
+    if (reportId) {
+      last = await prisma.report.findFirst({
+        where: {
+          id: reportId,
+          userId: user.id,
+          type: 'PALM',
+          palmScanId: scanId,
+        },
+        select: {
+          id: true,
+          status: true,
+          createdAt: true,
+          errorCode: true,
+          errorText: true,
+          input: true,
+          text: true,
+          pricingJson: true,
+        },
+      });
+    } else {
+      last = await prisma.report.findFirst({
+        where: {
+          userId: user.id,
+          type: 'PALM',
+          palmScanId: scanId,
+        },
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          status: true,
+          createdAt: true,
+          errorCode: true,
+          errorText: true,
+          input: true,
+          text: true,
+          pricingJson: true,
+        },
+      });
+    }
 
-    // ✅ paid = yookassa.status === 'succeeded'
-    const ykStatus = (lastReport?.pricingJson as any)?.yookassa?.status;
-    const paid = String(ykStatus || '').toLowerCase() === 'succeeded';
+    if (last && !extractPaid(last)) {
+      last = await syncPaymentStatusFromProxy(last);
+    }
+
+    const reportText = last?.status === 'READY' && last?.text ? String(last.text) : '';
+    const scanText = scan.aiText ? String(scan.aiText).trim() : '';
+    const text = reportText || scanText || '';
+    const hasText = Boolean(text);
+
+    const paid = extractPaid(last);
+    const paymentStatus = extractPaymentStatus(last);
 
     return NextResponse.json({
       ok: true,
       scan: {
         id: scan.id,
         status: scan.status,
-        createdAt: scan.createdAt,
+        createdAt: scan.createdAt.toISOString(),
         leftImageUrl: scan.leftImageUrl,
         rightImageUrl: scan.rightImageUrl,
         errorCode: scan.errorCode,
         errorText: scan.errorText,
       },
-      report: lastReport
+      report: last
         ? {
-            id: lastReport.id,
-            status: lastReport.status,
-            createdAt: lastReport.createdAt,
-            errorCode: lastReport.errorCode,
-            errorText: lastReport.errorText,
-            input,
+            id: last.id,
+            status: last.status,
+            createdAt: last.createdAt.toISOString(),
+            errorCode: last.errorCode,
+            errorText: last.errorText,
+            input: last.input,
           }
         : null,
       text,
-      hasText: Boolean(text),
-      paid, // ✅ вот оно
+      hasText,
+      paid,
+      paymentStatus,
     });
   } catch (e: any) {
-    console.error(e);
-    return NextResponse.json({ ok: false, error: 'GET_FAILED', hint: String(e?.message || 'See server logs') }, { status: 500 });
+    console.error('[PALM_GET_ERROR]', e);
+    return NextResponse.json(
+      {
+        ok: false,
+        error: 'GET_FAILED',
+        hint: String(e?.message || 'See server logs'),
+      },
+      { status: 500 }
+    );
   }
 }
