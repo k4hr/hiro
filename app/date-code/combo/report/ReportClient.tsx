@@ -1,4 +1,3 @@
-/* path: app/date-code/combo/report/ReportClient.tsx */
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -76,6 +75,7 @@ type GetResp =
       text: string;
       hasText: boolean;
       paid: boolean;
+      paymentStatus?: string | null;
     }
   | { ok: false; error: string; hint?: string };
 
@@ -83,6 +83,7 @@ function safeSelectedFromDb(input: any): Record<OptionKey, boolean> | null {
   try {
     const sel = input?.selected;
     if (!sel || typeof sel !== 'object') return null;
+
     const keys: OptionKey[] = [
       'COMBO_RESONANCE',
       'COMBO_STRENGTHS',
@@ -94,9 +95,11 @@ function safeSelectedFromDb(input: any): Record<OptionKey, boolean> | null {
       'COMBO_LESSON',
       'SUMMARY',
     ];
+
     const out: any = {};
     for (const k of keys) out[k] = sel[k] === true;
     out.SUMMARY = true;
+
     return out as Record<OptionKey, boolean>;
   } catch {
     return null;
@@ -108,9 +111,9 @@ function optionTitle(k: OptionKey) {
     case 'COMBO_RESONANCE':
       return 'Резонанс имени и жизненного пути';
     case 'COMBO_STRENGTHS':
-      return 'Сильные стороны комбо';
+      return 'Сильные стороны';
     case 'COMBO_WEAKNESSES':
-      return 'Слабые места комбо';
+      return 'Слабые места';
     case 'COMBO_MONEY':
       return 'Деньги и стратегия заработка';
     case 'COMBO_CAREER':
@@ -120,7 +123,7 @@ function optionTitle(k: OptionKey) {
     case 'COMBO_ENERGY':
       return 'Энергия и режим';
     case 'COMBO_LESSON':
-      return 'Главный урок комбо';
+      return 'Главный урок';
     case 'SUMMARY':
       return 'Итог + общие советы';
     default:
@@ -190,8 +193,14 @@ function storageKeyForCombo(dob: string, name: string) {
   return `date_code_combo_${dob}_${name}`.slice(0, 140);
 }
 
+function normalizeStatus(v: any): string {
+  return String(v || '').trim().toUpperCase();
+}
+
 export default function ReportClient() {
   const sp = useSearchParams();
+
+  const reportId = String(sp.get('reportId') || '').trim();
   const dob = String(sp.get('dob') || '').trim();
   const name = String(sp.get('name') || '').trim();
 
@@ -204,6 +213,7 @@ export default function ReportClient() {
   const [text, setText] = useState<string>('');
   const [info, setInfo] = useState<string>('');
   const [paid, setPaid] = useState(false);
+  const [paymentStatus, setPaymentStatus] = useState('');
 
   const [toast, setToast] = useState<string>('');
   const toastOn = Boolean(toast);
@@ -232,7 +242,7 @@ export default function ReportClient() {
     if (pollRef.current) return;
     pollRef.current = setInterval(() => {
       fetchFromDb(true);
-    }, 2000);
+    }, 2500);
   };
 
   useEffect(() => {
@@ -263,10 +273,11 @@ export default function ReportClient() {
     } catch {}
 
     fetchFromDb(false);
+    startPoll();
 
     return () => stopPoll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dob, name]);
+  }, [dob, name, reportId]);
 
   useEffect(() => {
     if (!toastOn) return;
@@ -291,7 +302,7 @@ export default function ReportClient() {
       const res = await fetch('/api/combo/get', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ initData, dob, name }),
+        body: JSON.stringify({ initData, reportId, dob, name }),
       });
 
       const j = (await res.json().catch(() => null)) as GetResp | null;
@@ -311,46 +322,76 @@ export default function ReportClient() {
       if (selFromDb) setDbSelected(selFromDb);
 
       const isPaid = Boolean(j.paid === true);
-      setPaid(isPaid);
+      const repStatus = normalizeStatus(rep?.status);
+      const hasReadyText = Boolean(j.hasText && j.text);
 
-      if (j.hasText && j.text) {
+      setPaid(isPaid);
+      setPaymentStatus(String(j.paymentStatus || ''));
+
+      if (hasReadyText) {
         stopPoll();
         setText(String(j.text));
         setInfo('');
+        setErr('');
         setLoading(false);
         return;
       }
 
-      const s = payload?.selected ?? selFromDb;
+      if (repStatus === 'FAILED') {
+        stopPoll();
+        setErr(rep?.errorText || rep?.errorCode || 'ANALYZE_FAILED');
+        setLoading(false);
+        return;
+      }
+
+      const selectedNow = payload?.selected ?? selFromDb;
       const age = payload?.age ?? (rep?.input?.age ?? null);
 
+      if (!rep) {
+        setInfo('Отчёт ещё не найден.');
+        setLoading(false);
+        return;
+      }
+
       if (!isPaid) {
-        analyzeStartedRef.current = false;
         setText('');
         setInfo('Ожидаем подтверждение оплаты…');
-        startPoll();
         setLoading(false);
+        startPoll();
         return;
       }
 
-      stopPoll();
+      if (repStatus === 'ANALYZING' || repStatus === 'PROCESSING') {
+        setInfo('Оплата подтверждена. Готовим разбор…');
+        setLoading(false);
+        startPoll();
+        return;
+      }
 
-      if (!s) {
+      if (!selectedNow) {
         setInfo('Данные для анализа не найдены.');
         setLoading(false);
+        startPoll();
         return;
       }
 
-      if (!analyzeStartedRef.current) {
+      if (!analyzeStartedRef.current && (repStatus === 'DRAFT' || !repStatus)) {
         analyzeStartedRef.current = true;
         setInfo('Оплата подтверждена. Запускаем анализ…');
         setLoading(false);
 
-        runAnalyze({ dob, name, age, selected: s });
+        runAnalyze({
+          dob,
+          name,
+          age,
+          selected: selectedNow,
+        });
         return;
       }
 
+      setInfo('Оплата подтверждена. Ожидаем готовый отчёт…');
       setLoading(false);
+      startPoll();
     } catch (e: any) {
       if (!silent) {
         setErr(e?.message ? String(e.message) : 'NETWORK');
@@ -377,6 +418,7 @@ export default function ReportClient() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           initData,
+          reportId: dbReport?.id || reportId || undefined,
           dob: p.dob,
           name: p.name,
           age: p.age,
@@ -385,51 +427,31 @@ export default function ReportClient() {
       });
 
       const j = (await res.json().catch(() => null)) as any;
-      if (!res.ok || !j || j.ok !== true || typeof j.text !== 'string') {
+
+      if (!res.ok || !j || j.ok !== true) {
         setErr(j?.error ? String(j.error) : `ANALYZE_FAILED(${res.status})`);
         setLoading(false);
+        startPoll();
         return;
       }
 
-      setText(String(j.text));
-      setInfo('');
-      setLoading(false);
+      if (typeof j.text === 'string' && j.text.trim()) {
+        setText(String(j.text));
+        setInfo('');
+        setLoading(false);
+        stopPoll();
+        return;
+      }
 
+      setInfo('Анализ запущен. Ожидаем готовый отчёт…');
+      setLoading(false);
+      startPoll();
       fetchFromDb(true);
     } catch (e: any) {
       setErr(e?.message ? String(e.message) : 'NETWORK');
       setLoading(false);
+      startPoll();
     }
-  };
-
-  const forceAnalyze = () => {
-    haptic('medium');
-
-    const sel = payload?.selected ?? dbSelected;
-    const repInput = dbReport?.input ?? null;
-    const age = payload?.age ?? (repInput?.age ?? null);
-
-    if (!dob) {
-      setErr('NO_DOB');
-      return;
-    }
-    if (!name) {
-      setErr('NO_NAME');
-      return;
-    }
-    if (!sel) {
-      setErr('NO_SELECTED_IN_DB');
-      setInfo('Нет сохранённых пунктов. Вернись назад и нажми “Продолжить” ещё раз.');
-      return;
-    }
-    if (!paid) {
-      setErr('PAYMENT_NOT_CONFIRMED');
-      setInfo('Сначала должна подтвердиться оплата.');
-      return;
-    }
-
-    analyzeStartedRef.current = true;
-    runAnalyze({ dob, name, age, selected: sel });
   };
 
   const goBack = () => {
@@ -449,12 +471,23 @@ export default function ReportClient() {
 
   const showMeta = Boolean(dob || name || dbSelected || payload);
   const ready = Boolean(text) && !loading && !err;
+  const repStatus = normalizeStatus(dbReport?.status);
+
+  const subtitle = ready
+    ? 'ОТЧЁТ ГОТОВ'
+    : loading
+      ? 'ПРОХОДИТ АНАЛИЗ...'
+      : !paid
+        ? 'ОЖИДАЕМ ОПЛАТУ...'
+        : repStatus === 'ANALYZING' || repStatus === 'PROCESSING'
+          ? 'ГОТОВИМ РАЗБОР...'
+          : 'ОЖИДАЕМ ОТЧЁТ...';
 
   return (
     <main className="p">
       <header className="hero">
         <div className="title">РАЗБОР</div>
-        <div className="subtitle">{ready ? 'ОТЧЁТ ГОТОВ' : loading ? 'ПРОХОДИТ АНАЛИЗ...' : paid ? 'ОЖИДАЕМ ОТЧЁТ...' : 'ОЖИДАЕМ ОПЛАТУ...'}</div>
+        <div className="subtitle">{subtitle}</div>
       </header>
 
       {toastOn ? (
@@ -467,7 +500,7 @@ export default function ReportClient() {
         <section className="card">
           <div className="label">Ошибка</div>
           <div className="warn">{err}</div>
-          <div className="row">
+          <div className="actionsGrid">
             <button type="button" className="btn" onClick={() => fetchFromDb(false)} disabled={loading}>
               Обновить
             </button>
@@ -485,6 +518,16 @@ export default function ReportClient() {
           <div className="hint">
             Оплата: <b>{paid ? 'подтверждена' : 'ожидается'}</b>
           </div>
+          {paymentStatus ? (
+            <div className="hint">
+              Статус платежа: <b>{paymentStatus}</b>
+            </div>
+          ) : null}
+          {repStatus ? (
+            <div className="hint">
+              Статус отчёта: <b>{repStatus}</b>
+            </div>
+          ) : null}
         </section>
       ) : null}
 
@@ -518,7 +561,7 @@ export default function ReportClient() {
 
         {text ? <pre className="out">{text}</pre> : null}
 
-        <div className="row">
+        <div className="actionsGrid">
           <button type="button" className="btn2" onClick={onCopy} disabled={!ready}>
             Скопировать
           </button>
@@ -527,18 +570,9 @@ export default function ReportClient() {
           </button>
         </div>
 
-        <div className="row">
+        <div className="actionsSingle">
           <button type="button" className="btn" onClick={() => fetchFromDb(false)} disabled={loading}>
-            Обновить из БД
-          </button>
-          <button type="button" className="btn2" onClick={goBack}>
-            Назад
-          </button>
-        </div>
-
-        <div className="row">
-          <button type="button" className="btn3" onClick={forceAnalyze} disabled={loading}>
-            Пересоздать отчёт (OpenAI)
+            Обновить
           </button>
         </div>
       </section>
@@ -675,22 +709,31 @@ export default function ReportClient() {
           word-break: break-word;
         }
 
-        .row {
-          display: flex;
+        .actionsGrid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 10px;
+          margin-top: 4px;
+        }
+
+        .actionsSingle {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr);
           gap: 10px;
           margin-top: 4px;
         }
 
         .btn,
-        .btn2,
-        .btn3 {
-          flex: 1;
+        .btn2 {
+          width: 100%;
+          min-width: 0;
           border-radius: 999px;
           padding: 12px 14px;
           font-size: 14px;
           font-weight: 950;
           cursor: pointer;
           -webkit-tap-highlight-color: transparent;
+          text-align: center;
         }
 
         .btn {
@@ -701,8 +744,7 @@ export default function ReportClient() {
         }
 
         .btn:disabled,
-        .btn2:disabled,
-        .btn3:disabled {
+        .btn2:disabled {
           opacity: 0.55;
           cursor: not-allowed;
           box-shadow: none;
@@ -714,15 +756,8 @@ export default function ReportClient() {
           background: rgba(255, 255, 255, 0.03);
         }
 
-        .btn3 {
-          border: 1px solid rgba(233, 236, 255, 0.14);
-          color: rgba(233, 236, 255, 0.92);
-          background: rgba(255, 255, 255, 0.02);
-        }
-
         .btn:active,
-        .btn2:active,
-        .btn3:active {
+        .btn2:active {
           transform: scale(0.99);
           opacity: 0.92;
         }
@@ -751,6 +786,12 @@ export default function ReportClient() {
         .backBtn:active {
           transform: scale(0.99);
           opacity: 0.92;
+        }
+
+        @media (max-width: 420px) {
+          .actionsGrid {
+            grid-template-columns: 1fr;
+          }
         }
       `}</style>
     </main>
