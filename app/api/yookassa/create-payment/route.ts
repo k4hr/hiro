@@ -84,19 +84,45 @@ function verifyTelegramWebAppInitData(initData: string, botToken: string, maxAge
   return { ok: true as const, user };
 }
 
-function getOrigin(req: Request) {
-  const h = req.headers;
+function normalizeOrigin(raw: string): string {
+  const clean = String(raw || '').trim().replace(/\/+$/, '');
+  if (!clean) return '';
 
-  const xfProto = (h.get('x-forwarded-proto') || '').trim();
-  const xfHost = (h.get('x-forwarded-host') || '').trim();
-  const host = (h.get('host') || '').trim();
+  try {
+    const u = new URL(clean);
+    return `${u.protocol}//${u.host}`;
+  } catch {
+    return '';
+  }
+}
+
+function getPublicAppOrigin(req: Request): string {
+  const envOrigin =
+    normalizeOrigin(envClean('APP_PUBLIC_URL')) ||
+    normalizeOrigin(envClean('NEXT_PUBLIC_APP_URL')) ||
+    normalizeOrigin(envClean('NEXT_PUBLIC_SITE_URL'));
+
+  if (envOrigin) return envOrigin;
+
+  const h = req.headers;
+  const xfProto = String(h.get('x-forwarded-proto') || '').trim();
+  const xfHost = String(h.get('x-forwarded-host') || '').trim();
+  const host = String(h.get('host') || '').trim();
 
   const proto = xfProto || 'https';
   const usedHost = xfHost || host;
 
   if (!usedHost) return '';
 
-  return `${proto}://${usedHost}`;
+  return normalizeOrigin(`${proto}://${usedHost}`);
+}
+
+function normalizeReturnPath(v: string): string {
+  const raw = String(v || '').trim();
+  if (!raw) return '/';
+  if (!raw.startsWith('/')) return '/';
+  if (raw.startsWith('//')) return '/';
+  return raw;
 }
 
 function getRuProxyBase() {
@@ -230,14 +256,20 @@ export async function POST(req: Request) {
       );
     }
 
-    const origin = getOrigin(req);
+    const origin = getPublicAppOrigin(req);
     if (!origin) {
-      return NextResponse.json({ ok: false, error: 'NO_ORIGIN' }, { status: 500 });
+      return NextResponse.json(
+        {
+          ok: false,
+          error: 'NO_PUBLIC_ORIGIN',
+          hint: 'Set APP_PUBLIC_URL env, e.g. https://your-domain.com',
+        },
+        { status: 500 }
+      );
     }
 
-    const returnPath = String(body.returnPath ?? '').trim();
-    const safeReturnPath = returnPath.startsWith('/') ? returnPath : '/';
-    const returnUrl = `${origin}${safeReturnPath}`;
+    const returnPath = normalizeReturnPath(String(body.returnPath ?? ''));
+    const returnUrl = `${origin}${returnPath}`;
 
     const description = String(body.description ?? `Оплата отчёта ${report.type}`).slice(0, 128);
 
@@ -298,6 +330,7 @@ export async function POST(req: Request) {
           details: data,
           proxyError: (data as any)?.error ?? null,
           proxyRaw: (data as any)?.raw ?? null,
+          debugReturnUrl: returnUrl,
         },
         { status: 400 }
       );
@@ -330,6 +363,7 @@ export async function POST(req: Request) {
             paymentId,
             status: paymentStatus || 'pending',
             returnUrl,
+            returnPath,
             createdAt: new Date().toISOString(),
             amount: {
               value: totalRub.toFixed(2),
