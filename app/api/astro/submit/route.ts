@@ -13,6 +13,17 @@ type TgUser = {
   last_name: string | null;
 };
 
+type OptionKey =
+  | 'ASTRO_PERSON'
+  | 'ASTRO_LOVE'
+  | 'ASTRO_MONEY'
+  | 'ASTRO_CAREER'
+  | 'ASTRO_TIMING'
+  | 'ASTRO_FORMULA';
+
+const PAID_KEYS: OptionKey[] = ['ASTRO_PERSON', 'ASTRO_LOVE', 'ASTRO_MONEY', 'ASTRO_CAREER', 'ASTRO_TIMING'];
+const SUMMARY_KEY: OptionKey = 'ASTRO_FORMULA';
+
 function envClean(name: string) {
   return String(process.env[name] ?? '').replace(/[\r\n]/g, '').trim();
 }
@@ -53,9 +64,7 @@ function verifyTelegramWebAppInitData(initData: string, botToken: string, maxAge
   const secretKey = crypto.createHmac('sha256', 'WebAppData').update(botToken).digest();
   const computedHash = crypto.createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
 
-  if (!timingSafeEqualHex(computedHash, hash)) {
-    return { ok: false as const, error: 'BAD_HASH' as const };
-  }
+  if (!timingSafeEqualHex(computedHash, hash)) return { ok: false as const, error: 'BAD_HASH' as const };
 
   const userStr = params.get('user');
   if (!userStr) return { ok: false as const, error: 'NO_USER' as const };
@@ -103,28 +112,56 @@ function safeNum(v: any): number | null {
   return n;
 }
 
-function countSelectedTrue(selected: any): number {
-  if (!selected || typeof selected !== 'object') return 0;
+function normalizeSelected(v: any): Record<OptionKey, boolean> {
+  const src = v && typeof v === 'object' ? v : {};
+  return {
+    ASTRO_PERSON: src.ASTRO_PERSON === true,
+    ASTRO_LOVE: src.ASTRO_LOVE === true,
+    ASTRO_MONEY: src.ASTRO_MONEY === true,
+    ASTRO_CAREER: src.ASTRO_CAREER === true,
+    ASTRO_TIMING: src.ASTRO_TIMING === true,
+    ASTRO_FORMULA: true,
+  };
+}
 
-  let c = 0;
-  for (const [k, v] of Object.entries(selected)) {
-    if (String(k).toUpperCase() === 'ASTRO_FORMULA') continue;
-    if (v === true) c += 1;
+function pickSelectedList(selected: Record<OptionKey, boolean>): OptionKey[] {
+  const out = PAID_KEYS.filter((k) => selected[k] === true);
+  out.push(SUMMARY_KEY);
+  return out;
+}
+
+function countPaidSelected(selected: Record<OptionKey, boolean>) {
+  return PAID_KEYS.filter((k) => selected[k] === true).length;
+}
+
+function getPaymentStatusFromPricing(pricingJson: any): string {
+  const candidates = [
+    pricingJson?.yookassa?.status,
+    pricingJson?.paymentStatus,
+    pricingJson?.status,
+    pricingJson?.payment?.status,
+  ];
+
+  for (const c of candidates) {
+    const s = String(c || '').trim().toLowerCase();
+    if (s) return s;
   }
-  return c;
+
+  return '';
+}
+
+function isPaidPricing(pricingJson: any): boolean {
+  const status = getPaymentStatusFromPricing(pricingJson);
+  return status === 'succeeded' || status === 'waiting_for_capture';
 }
 
 export async function POST(req: Request) {
   try {
     const botToken = envClean('TELEGRAM_BOT_TOKEN');
-    if (!botToken) {
-      return NextResponse.json({ ok: false, error: 'NO_BOT_TOKEN' }, { status: 500 });
-    }
+    if (!botToken) return NextResponse.json({ ok: false, error: 'NO_BOT_TOKEN' }, { status: 500 });
 
     const body = (await req.json().catch(() => null)) as any;
-    if (!body) {
-      return NextResponse.json({ ok: false, error: 'BAD_JSON' }, { status: 400 });
-    }
+    if (!body) return NextResponse.json({ ok: false, error: 'BAD_JSON' }, { status: 400 });
 
     const initData = String(body.initData || '').trim();
     const dob = String(body.dob || '').trim();
@@ -135,32 +172,20 @@ export async function POST(req: Request) {
       accuracyLevelRaw !== null ? Math.max(0, Math.min(3, Math.trunc(accuracyLevelRaw))) : 0;
 
     const age = safeNum(body.age);
+    const selected = normalizeSelected(body.selected);
 
-    const selected =
-      body.selected && typeof body.selected === 'object'
-        ? {
-            ...body.selected,
-            ASTRO_FORMULA: true,
-          }
-        : { ASTRO_FORMULA: true };
+    const clientPriceRub = safeNum(body.priceRub);
+    const clientSummaryPriceRub = safeNum(body.summaryPriceRub);
+    const clientTotalRub = safeNum(body.totalRub);
 
-    if (!initData) {
-      return NextResponse.json({ ok: false, error: 'NO_INIT_DATA' }, { status: 401 });
-    }
-
-    if (!dob) {
-      return NextResponse.json({ ok: false, error: 'NO_DOB' }, { status: 400 });
-    }
+    if (!initData) return NextResponse.json({ ok: false, error: 'NO_INIT_DATA' }, { status: 401 });
+    if (!dob) return NextResponse.json({ ok: false, error: 'NO_DOB' }, { status: 400 });
 
     const dobDate = parseDobToUtcDate(dob);
-    if (!dobDate) {
-      return NextResponse.json({ ok: false, error: 'BAD_DOB' }, { status: 400 });
-    }
+    if (!dobDate) return NextResponse.json({ ok: false, error: 'BAD_DOB' }, { status: 400 });
 
     const v = verifyTelegramWebAppInitData(initData, botToken);
-    if (!v.ok) {
-      return NextResponse.json({ ok: false, error: v.error }, { status: 401 });
-    }
+    if (!v.ok) return NextResponse.json({ ok: false, error: v.error }, { status: 401 });
 
     const user = await prisma.user.upsert({
       where: { telegramId: v.user.id },
@@ -182,8 +207,13 @@ export async function POST(req: Request) {
     const modulePriceRub = 39;
     const summaryPriceRub = 49;
 
-    const paidCount = countSelectedTrue(selected);
-    const totalRub = paidCount * modulePriceRub + summaryPriceRub;
+    const selectedCountPaid = countPaidSelected(selected);
+    const selectedList = pickSelectedList(selected);
+    const totalRub = selectedCountPaid * modulePriceRub + summaryPriceRub;
+
+    if (!Number.isFinite(totalRub) || totalRub <= 0) {
+      return NextResponse.json({ ok: false, error: 'BAD_TOTAL_RUB' }, { status: 400 });
+    }
 
     const inputJson = {
       mode: 'ASTRO',
@@ -194,23 +224,72 @@ export async function POST(req: Request) {
       birthTime,
       accuracyLevel,
       selected,
+      selectedList,
       clientPricing: {
-        totalRub: safeNum(body.totalRub),
-        priceRub: safeNum(body.priceRub),
-        summaryPriceRub: safeNum(body.summaryPriceRub),
+        totalRub: clientTotalRub,
+        priceRub: clientPriceRub,
+        summaryPriceRub: clientSummaryPriceRub,
+      },
+      serverPricing: {
+        modulePriceRub,
+        summaryPriceRub,
+        selectedCountPaid,
+        totalRub,
       },
       savedAt: new Date().toISOString(),
     };
 
-    const pricingJson = {
+    const basePricingJson = {
       kind: 'ASTRO_CHART',
       modulePriceRub,
       summaryPriceRub,
-      paidCount,
+      selectedCountPaid,
       totalRub,
       selected,
+      selectedList,
       accuracyLevel,
     };
+
+    const existingPaid = await prisma.report.findFirst({
+      where: {
+        userId: user.id,
+        type: 'ASTRO',
+        astroMode: 'CHART',
+        astroDob: dobDate,
+        astroCity: birthPlace || null,
+        astroTime: birthTime || null,
+      },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        pricingJson: true,
+      },
+    });
+
+    if (existingPaid && isPaidPricing(existingPaid.pricingJson)) {
+      await prisma.report.update({
+        where: { id: existingPaid.id },
+        data: {
+          input: inputJson,
+          priceRub: modulePriceRub,
+          totalRub,
+          pricingJson: {
+            ...(typeof existingPaid.pricingJson === 'object' && existingPaid.pricingJson ? existingPaid.pricingJson : {}),
+            ...basePricingJson,
+          },
+          errorCode: null,
+          errorText: null,
+        },
+      });
+
+      return NextResponse.json({
+        ok: true,
+        reportId: existingPaid.id,
+        totalRub,
+        selectedCountPaid,
+        alreadyPaid: true,
+      });
+    }
 
     const draft = await prisma.report.findFirst({
       where: {
@@ -223,7 +302,7 @@ export async function POST(req: Request) {
         astroTime: birthTime || null,
       },
       orderBy: { createdAt: 'desc' },
-      select: { id: true },
+      select: { id: true, pricingJson: true },
     });
 
     if (draft) {
@@ -236,12 +315,18 @@ export async function POST(req: Request) {
           astroDob: dobDate,
           astroCity: birthPlace || null,
           astroTime: birthTime || null,
+          astroAccuracyLevel: accuracyLevel,
           priceRub: modulePriceRub,
           totalRub,
-          pricingJson,
+          pricingJson: {
+            ...(typeof draft.pricingJson === 'object' && draft.pricingJson ? draft.pricingJson : {}),
+            ...basePricingJson,
+          },
           errorCode: null,
           errorText: null,
           text: null,
+          json: null,
+          status: 'DRAFT',
         },
       });
 
@@ -249,6 +334,8 @@ export async function POST(req: Request) {
         ok: true,
         reportId: draft.id,
         totalRub,
+        selectedCountPaid,
+        alreadyPaid: false,
       });
     }
 
@@ -262,9 +349,10 @@ export async function POST(req: Request) {
         astroDob: dobDate,
         astroCity: birthPlace || null,
         astroTime: birthTime || null,
+        astroAccuracyLevel: accuracyLevel,
         priceRub: modulePriceRub,
         totalRub,
-        pricingJson,
+        pricingJson: basePricingJson,
       },
       select: { id: true },
     });
@@ -273,6 +361,8 @@ export async function POST(req: Request) {
       ok: true,
       reportId: created.id,
       totalRub,
+      selectedCountPaid,
+      alreadyPaid: false,
     });
   } catch (e: any) {
     console.error('[ASTRO_SUBMIT_ERROR]', e);
