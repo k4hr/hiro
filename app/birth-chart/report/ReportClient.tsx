@@ -1,8 +1,8 @@
-/* path: app/birth-chart/report/ReportClient.tsx */
+/* path: app/birth-chart/PageClient.tsx */
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 
 function tg(): any | null {
   try {
@@ -37,165 +37,115 @@ function getInitDataNow(): string {
   return String(getCookie('tg_init_data') || '').trim();
 }
 
-type OptionKey = 'ASTRO_PERSON' | 'ASTRO_LOVE' | 'ASTRO_MONEY' | 'ASTRO_CAREER' | 'ASTRO_TIMING' | 'ASTRO_FORMULA';
-
-type Payload = {
-  mode: 'ASTRO';
-  dob: string;
-  age: number | null;
-  birthPlace: string;
-  birthTime: string;
-  accuracyLevel: number;
-  selected: Record<OptionKey, boolean>;
-  totalRub: number;
-  priceRub: number;
-  summaryPriceRub: number;
-  createdAt: string;
-};
-
-type DbReport = {
-  id: string;
-  status: string;
-  createdAt: string;
-  errorCode: string | null;
-  errorText: string | null;
-  input: any | null;
-};
-
-type GetResp =
-  | {
-      ok: true;
-      report: DbReport | null;
-      text: string;
-      hasText: boolean;
-      paid: boolean;
-    }
-  | { ok: false; error: string; hint?: string };
-
-function safeSelectedFromDb(input: any): Record<OptionKey, boolean> | null {
-  try {
-    const sel = input?.selected;
-    if (!sel || typeof sel !== 'object') return null;
-    const keys: OptionKey[] = ['ASTRO_PERSON', 'ASTRO_LOVE', 'ASTRO_MONEY', 'ASTRO_CAREER', 'ASTRO_TIMING', 'ASTRO_FORMULA'];
-    const out: any = {};
-    for (const k of keys) out[k] = sel[k] === true;
-    out.ASTRO_FORMULA = true;
-    return out as Record<OptionKey, boolean>;
-  } catch {
-    return null;
-  }
-}
-
-function optionTitle(k: OptionKey) {
-  switch (k) {
-    case 'ASTRO_PERSON':
-      return 'Портрет личности';
-    case 'ASTRO_LOVE':
-      return 'Любовь и отношения';
-    case 'ASTRO_MONEY':
-      return 'Деньги, богатство, успех';
-    case 'ASTRO_CAREER':
-      return 'Карьера и предназначение';
-    case 'ASTRO_TIMING':
-      return 'Тайминг: год + 12 месяцев';
-    case 'ASTRO_FORMULA':
-      return 'Итог: формула карты';
-    default:
-      return String(k);
-  }
-}
-
-function buildShareUrl(): string {
-  const envUrl = (process.env.NEXT_PUBLIC_TMA_SHARE_URL || '').trim();
-  if (envUrl) return envUrl;
+function openPaymentUrl(url: string) {
+  const clean = String(url || '').trim();
+  if (!clean) return;
 
   try {
-    const u = new URL(window.location.href);
-    return `${u.origin}/birth-chart`;
-  } catch {
-    return '/birth-chart';
-  }
-}
-
-function openShare() {
-  haptic('medium');
-
-  const url = buildShareUrl();
-  const text = 'Смотри разбор “Карта неба” в мини-приложении';
-  const shareLink = `https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`;
-
-  try {
-    const w = tg();
-    if (w?.openTelegramLink) {
-      w.openTelegramLink(shareLink);
-      return;
-    }
+    window.location.assign(clean);
+    return;
   } catch {}
 
   try {
-    window.open(shareLink, '_blank');
-  } catch {
-    window.location.href = shareLink;
-  }
+    window.location.href = clean;
+    return;
+  } catch {}
+
+  try {
+    tg()?.openLink?.(clean);
+  } catch {}
 }
 
-async function copyToClipboard(text: string): Promise<boolean> {
-  try {
-    if (!text) return false;
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch {
-    try {
-      const ta = document.createElement('textarea');
-      ta.value = text;
-      ta.setAttribute('readonly', 'true');
-      ta.style.position = 'fixed';
-      ta.style.left = '-9999px';
-      ta.style.top = '0';
-      document.body.appendChild(ta);
-      ta.select();
-      const ok = document.execCommand('copy');
-      document.body.removeChild(ta);
-      return ok;
-    } catch {
-      return false;
-    }
-  }
+const PRICE_RUB = 39;
+const SUMMARY_PRICE_RUB = 49;
+
+type OptionKey =
+  | 'ASTRO_PERSON'
+  | 'ASTRO_LOVE'
+  | 'ASTRO_MONEY'
+  | 'ASTRO_CAREER'
+  | 'ASTRO_TIMING'
+  | 'ASTRO_FORMULA';
+
+function daysInMonth(year: number, month: number) {
+  const isLeap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const maxByMonth = [31, isLeap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return maxByMonth[month - 1] ?? 31;
+}
+
+function isDobPartsOk(dd: string, mm: string, yyyy: string) {
+  if (!dd || !mm || !yyyy) return false;
+  if (!/^\d{1,2}$/.test(dd)) return false;
+  if (!/^\d{1,2}$/.test(mm)) return false;
+  if (!/^\d{4}$/.test(yyyy)) return false;
+
+  const d = Number(dd);
+  const m = Number(mm);
+  const y = Number(yyyy);
+  if (!d || !m || !y) return false;
+  if (y < 1900 || y > 2100) return false;
+  if (m < 1 || m > 12) return false;
+
+  const dim = daysInMonth(y, m);
+  if (d < 1 || d > dim) return false;
+  return true;
+}
+
+function formatDob(dd: string, mm: string, yyyy: string) {
+  const d = dd.padStart(2, '0');
+  const m = mm.padStart(2, '0');
+  return `${d}.${m}.${yyyy}`;
+}
+
+function calcAge(dd: string, mm: string, yyyy: string) {
+  const d = Number(dd);
+  const m = Number(mm);
+  const y = Number(yyyy);
+  if (!d || !m || !y) return null;
+
+  const now = new Date();
+  const birth = new Date(y, m - 1, d);
+  if (Number.isNaN(birth.getTime())) return null;
+
+  let age = now.getFullYear() - y;
+  const thisYearsBirthday = new Date(now.getFullYear(), m - 1, d);
+  if (now < thisYearsBirthday) age -= 1;
+
+  if (age < 0 || age > 130) return null;
+  return age;
+}
+
+function cleanText(v: string, max = 80) {
+  return v.replace(/\s+/g, ' ').trim().slice(0, max);
+}
+
+function isTimeOk(hh: string, mm: string) {
+  const h = hh.trim();
+  const m = mm.trim();
+
+  if (!h && !m) return true;
+  if (!h || !m) return false;
+  if (!/^\d{1,2}$/.test(h) || !/^\d{1,2}$/.test(m)) return false;
+
+  const H = Number(h);
+  const M = Number(m);
+  if (Number.isNaN(H) || Number.isNaN(M)) return false;
+  if (H < 0 || H > 23) return false;
+  if (M < 0 || M > 59) return false;
+
+  return true;
+}
+
+function formatTime(hh: string, mm: string) {
+  return `${hh.padStart(2, '0')}:${mm.padStart(2, '0')}`;
 }
 
 function storageKeyAstro(dob: string, place: string, time: string) {
   return `birth_chart_${dob}_${place}_${time}`.slice(0, 140);
 }
 
-export default function ReportClient() {
-  const sp = useSearchParams();
-
-  const dob = String(sp.get('dob') || '').trim();
-  const place = String(sp.get('place') || '').trim();
-  const time = String(sp.get('time') || '').trim();
-
-  const [payload, setPayload] = useState<Payload | null>(null);
-  const [dbReport, setDbReport] = useState<DbReport | null>(null);
-  const [dbSelected, setDbSelected] = useState<Record<OptionKey, boolean> | null>(null);
-
-  const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState<string>('');
-  const [text, setText] = useState<string>('');
-  const [info, setInfo] = useState<string>('');
-  const [paid, setPaid] = useState<boolean>(false);
-
-  const [toast, setToast] = useState<string>('');
-  const toastOn = Boolean(toast);
-
-  const selectedForUi = payload?.selected ?? dbSelected;
-
-  const selectedKeysRu = useMemo(() => {
-    const s = selectedForUi;
-    if (!s) return [];
-    return (Object.entries(s) as Array<[OptionKey, boolean]>)
-      .filter(([, v]) => v)
-      .map(([k]) => optionTitle(k));
-  }, [selectedForUi]);
+export default function PageClient() {
+  const router = useRouter();
 
   useEffect(() => {
     try {
@@ -204,343 +154,361 @@ export default function ReportClient() {
     } catch {}
   }, []);
 
-  useEffect(() => {
-    if (!dob) {
-      setErr('NO_DOB');
+  const [submitErr, setSubmitErr] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const [dd, setDd] = useState('');
+  const [mm, setMm] = useState('');
+  const [yyyy, setYyyy] = useState('');
+
+  const mmRef = useRef<HTMLInputElement | null>(null);
+  const yyyyRef = useRef<HTMLInputElement | null>(null);
+
+  const dobOk = useMemo(() => isDobPartsOk(dd.trim(), mm.trim(), yyyy.trim()), [dd, mm, yyyy]);
+  const dobStr = useMemo(() => (dobOk ? formatDob(dd.trim(), mm.trim(), yyyy.trim()) : ''), [dobOk, dd, mm, yyyy]);
+  const age = useMemo(() => (dobOk ? calcAge(dd.trim(), mm.trim(), yyyy.trim()) : null), [dobOk, dd, mm, yyyy]);
+
+  const [place, setPlace] = useState('');
+  const placeClean = useMemo(() => cleanText(place, 96), [place]);
+  const hasPlace = useMemo(() => placeClean.length >= 3, [placeClean]);
+
+  const [hh, setHh] = useState('');
+  const [min, setMin] = useState('');
+  const timeOk = useMemo(() => isTimeOk(hh, min), [hh, min]);
+  const hasTime = useMemo(() => hh.trim().length > 0 || min.trim().length > 0, [hh, min]);
+  const timeStr = useMemo(() => (hasTime && timeOk ? formatTime(hh.trim(), min.trim()) : ''), [hasTime, timeOk, hh, min]);
+
+  const baseOk = dobOk && timeOk;
+
+  const options = useMemo(
+    () =>
+      [
+        { key: 'ASTRO_PERSON' as const, title: 'Портрет личности', sub: 'Ядро, эмоции, стиль, внутренний мотор', price: PRICE_RUB, fixed: false },
+        { key: 'ASTRO_LOVE' as const, title: 'Любовь и отношения', sub: 'Тип партнёра, триггеры, правила гармонии', price: PRICE_RUB, fixed: false },
+        { key: 'ASTRO_MONEY' as const, title: 'Деньги, богатство, успех', sub: 'Как приходят деньги, рост и ловушки', price: PRICE_RUB, fixed: false },
+        { key: 'ASTRO_CAREER' as const, title: 'Карьера и предназначение', sub: 'Роль, куда расти, что тормозит, сильные сферы', price: PRICE_RUB, fixed: false },
+        { key: 'ASTRO_TIMING' as const, title: 'Тайминг на год', sub: 'Деньги, отношения, карьера, обучение', price: PRICE_RUB, fixed: false },
+        { key: 'ASTRO_FORMULA' as const, title: 'Итог', sub: 'Формула карты', price: SUMMARY_PRICE_RUB, fixed: true },
+      ] as const,
+    []
+  );
+
+  const [selected, setSelected] = useState<Record<OptionKey, boolean>>({
+    ASTRO_PERSON: true,
+    ASTRO_LOVE: true,
+    ASTRO_MONEY: true,
+    ASTRO_CAREER: true,
+    ASTRO_TIMING: true,
+    ASTRO_FORMULA: true,
+  });
+
+  const toggleOption = (k: OptionKey) => {
+    if (k === 'ASTRO_FORMULA') return;
+    haptic('light');
+    setSelected((prev) => ({ ...prev, [k]: !prev[k] }));
+  };
+
+  const paidCount = useMemo(() => {
+    const keys: OptionKey[] = ['ASTRO_PERSON', 'ASTRO_LOVE', 'ASTRO_MONEY', 'ASTRO_CAREER', 'ASTRO_TIMING'];
+    return keys.filter((k) => selected[k] === true).length;
+  }, [selected]);
+
+  const totalRub = useMemo(() => paidCount * PRICE_RUB + SUMMARY_PRICE_RUB, [paidCount]);
+  const submitDisabled = !baseOk || paidCount <= 0 || submitting;
+
+  const onDayChange = (v: string) => {
+    const clean = v.replace(/\D/g, '').slice(0, 2);
+    setDd(clean);
+    if (clean.length === 2) mmRef.current?.focus();
+  };
+
+  const onMonthChange = (v: string) => {
+    const clean = v.replace(/\D/g, '').slice(0, 2);
+    setMm(clean);
+    if (clean.length === 2) yyyyRef.current?.focus();
+  };
+
+  const onYearChange = (v: string) => setYyyy(v.replace(/\D/g, '').slice(0, 4));
+  const onHhChange = (v: string) => setHh(v.replace(/\D/g, '').slice(0, 2));
+  const onMinChange = (v: string) => setMin(v.replace(/\D/g, '').slice(0, 2));
+
+  const accuracyLevel = useMemo(() => {
+    if (!dobOk) return 0;
+    if (hasPlace && timeStr) return 3;
+    if (hasPlace) return 2;
+    return 1;
+  }, [dobOk, hasPlace, timeStr]);
+
+  const accuracyText = useMemo(() => {
+    if (!dobOk) return 'Точность: —';
+    if (accuracyLevel === 3) return 'Точность: полная (дата + место + время)';
+    if (accuracyLevel === 2) return 'Точность: уточнённая (дата + место)';
+    return 'Точность: базовая (только дата)';
+  }, [dobOk, accuracyLevel]);
+
+  const onSubmit = async () => {
+    haptic('medium');
+    if (submitDisabled) return;
+
+    const initData = getInitDataNow();
+    if (!initData) {
+      setSubmitErr('NO_INIT_DATA');
       return;
     }
 
+    setSubmitting(true);
+    setSubmitErr('');
+
+    const payload = {
+      mode: 'ASTRO' as const,
+      dob: dobStr,
+      age,
+      birthPlace: hasPlace ? placeClean : '',
+      birthTime: timeStr || '',
+      accuracyLevel,
+      selected: { ...selected, ASTRO_FORMULA: true },
+      totalRub,
+      priceRub: PRICE_RUB,
+      summaryPriceRub: SUMMARY_PRICE_RUB,
+      createdAt: new Date().toISOString(),
+    };
+
     try {
-      const raw = sessionStorage.getItem(storageKeyAstro(dob, place, time));
-      if (raw) {
-        const j = JSON.parse(raw) as Payload;
-        if (j && j.mode === 'ASTRO' && j.dob === dob) setPayload(j);
-      }
+      sessionStorage.setItem(storageKeyAstro(payload.dob, payload.birthPlace, payload.birthTime), JSON.stringify(payload));
     } catch {}
 
-    fetchFromDb();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dob, place, time]);
-
-  useEffect(() => {
-    if (!toastOn) return;
-    const t = setTimeout(() => setToast(''), 1800);
-    return () => clearTimeout(t);
-  }, [toastOn]);
-
-  const analyzeStartedRef = useRef(false);
-
-  const pollRef = useRef<any>(null);
-  const stopPoll = () => {
-    if (pollRef.current) {
-      clearInterval(pollRef.current);
-      pollRef.current = null;
-    }
-  };
-  const startPoll = () => {
-    if (pollRef.current) return;
-    pollRef.current = setInterval(() => {
-      fetchFromDb(true);
-    }, 2000);
-  };
-
-  useEffect(() => {
-    return () => stopPoll();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const fetchFromDb = async (silent = false) => {
-    const initData = getInitDataNow();
-    if (!initData) {
-      if (!silent) setErr('NO_INIT_DATA');
-      return;
-    }
-
-    if (!silent) {
-      setInfo('');
-      setErr('');
-      setLoading(true);
-    }
-
     try {
-      const res = await fetch('/api/astro/get', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ initData, dob, birthPlace: place, birthTime: time }),
-      });
-
-      const j = (await res.json().catch(() => null)) as GetResp | null;
-
-      if (!res.ok || !j || (j as any).ok !== true) {
-        if (!silent) {
-          setErr((j as any)?.error ? String((j as any).error) : `GET_FAILED(${res.status})`);
-          setLoading(false);
-        }
-        return;
-      }
-
-      const rep = (j as any).report ?? null;
-      setDbReport(rep);
-
-      const selFromDb = rep?.input ? safeSelectedFromDb(rep.input) : null;
-      if (selFromDb) setDbSelected(selFromDb);
-
-      const isPaid = Boolean((j as any).paid === true);
-      setPaid(isPaid);
-
-      if ((j as any).hasText && (j as any).text) {
-        stopPoll();
-        setText(String((j as any).text));
-        setInfo('');
-        setLoading(false);
-        return;
-      }
-
-      const s = payload?.selected ?? selFromDb;
-      const agex = payload?.age ?? (rep?.input?.age ?? null);
-      const accx = payload?.accuracyLevel ?? (rep?.input?.accuracyLevel ?? null);
-
-      const bp = payload?.birthPlace ?? place;
-      const bt = payload?.birthTime ?? time;
-
-      if (!isPaid) {
-        analyzeStartedRef.current = false;
-        setText('');
-        setInfo('Ожидаем подтверждение оплаты…');
-        startPoll();
-        setLoading(false);
-        return;
-      }
-
-      stopPoll();
-
-      if (!s) {
-        setInfo('Данные для анализа не найдены.');
-        setLoading(false);
-        return;
-      }
-
-      if (!analyzeStartedRef.current) {
-        analyzeStartedRef.current = true;
-        setInfo('Оплата подтверждена. Запускаем анализ…');
-        setLoading(false);
-
-        runAnalyze({
-          dob,
-          age: agex,
-          birthPlace: bp,
-          birthTime: bt,
-          accuracyLevel: accx,
-          selected: s,
-        });
-        return;
-      }
-
-      setLoading(false);
-    } catch (e: any) {
-      if (!silent) {
-        setErr(e?.message ? String(e.message) : 'NETWORK');
-        setLoading(false);
-      }
-    }
-  };
-
-  const runAnalyze = async (p: {
-    dob: string;
-    age: any;
-    birthPlace: string;
-    birthTime: string;
-    accuracyLevel: any;
-    selected: Record<OptionKey, boolean>;
-  }) => {
-    const initData = getInitDataNow();
-    if (!initData) {
-      setErr('NO_INIT_DATA');
-      return;
-    }
-
-    setErr('');
-    setInfo('');
-    setText('');
-    setLoading(true);
-
-    try {
-      const res = await fetch('/api/astro/analyze', {
+      const sRes = await fetch('/api/astro/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           initData,
-          dob: p.dob,
-          age: p.age,
-          birthPlace: p.birthPlace,
-          birthTime: p.birthTime,
-          accuracyLevel: p.accuracyLevel,
-          selected: p.selected,
+          dob: payload.dob,
+          age: payload.age,
+          birthPlace: payload.birthPlace,
+          birthTime: payload.birthTime,
+          accuracyLevel: payload.accuracyLevel,
+          selected: payload.selected,
+          totalRub: payload.totalRub,
+          priceRub: payload.priceRub,
+          summaryPriceRub: payload.summaryPriceRub,
         }),
       });
 
-      const j = (await res.json().catch(() => null)) as any;
-      if (!res.ok || !j || j.ok !== true || typeof j.text !== 'string') {
-        setErr(j?.error ? String(j.error) : `ANALYZE_FAILED(${res.status})`);
-        setLoading(false);
+      const sJson = (await sRes.json().catch(() => null)) as any;
+      if (!sRes.ok || !sJson || sJson.ok !== true || typeof sJson.reportId !== 'string') {
+        setSubmitting(false);
+        setSubmitErr(sJson?.error ? String(sJson.error) : `SUBMIT_FAILED(${sRes.status})`);
         return;
       }
 
-      setText(String(j.text));
-      setInfo('');
-      setLoading(false);
+      const reportId = String(sJson.reportId).trim();
+      if (!reportId) {
+        setSubmitting(false);
+        setSubmitErr('NO_REPORT_ID');
+        return;
+      }
 
-      fetchFromDb(true);
+      const returnPath =
+        `/birth-chart/report?dob=${encodeURIComponent(payload.dob)}` +
+        `&place=${encodeURIComponent(payload.birthPlace)}` +
+        `&time=${encodeURIComponent(payload.birthTime)}` +
+        `&reportId=${encodeURIComponent(reportId)}`;
+
+      if (sJson.alreadyPaid === true) {
+        router.push(returnPath);
+        return;
+      }
+
+      const pRes = await fetch('/api/yookassa/create-payment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          initData,
+          reportId,
+          description: 'Арканум · карта неба',
+          returnPath,
+        }),
+      });
+
+      const pJson = (await pRes.json().catch(() => null)) as any;
+      const paymentUrl = String(pJson?.url || pJson?.confirmationUrl || '').trim();
+
+      if (!pRes.ok || !pJson || pJson.ok !== true || !paymentUrl) {
+        setSubmitting(false);
+        setSubmitErr(pJson?.error ? String(pJson.error) : `PAYMENT_CREATE_FAILED(${pRes.status})`);
+        return;
+      }
+
+      openPaymentUrl(paymentUrl);
     } catch (e: any) {
-      setErr(e?.message ? String(e.message) : 'NETWORK');
-      setLoading(false);
+      setSubmitting(false);
+      setSubmitErr(e?.message ? String(e.message) : 'NETWORK_ERROR');
     }
-  };
-
-  const forceAnalyze = () => {
-    haptic('medium');
-
-    const sel = payload?.selected ?? dbSelected;
-    const repInput = dbReport?.input ?? null;
-
-    const agex = payload?.age ?? (repInput?.age ?? null);
-    const accx = payload?.accuracyLevel ?? (repInput?.accuracyLevel ?? null);
-
-    const bp = payload?.birthPlace ?? (repInput?.birthPlace ?? place);
-    const bt = payload?.birthTime ?? (repInput?.birthTime ?? time);
-
-    if (!dob) {
-      setErr('NO_DOB');
-      return;
-    }
-    if (!sel) {
-      setErr('NO_SELECTED_IN_DB');
-      setInfo('Нет сохранённых пунктов. Вернись назад и нажми “Продолжить” ещё раз.');
-      return;
-    }
-
-    runAnalyze({ dob, age: agex, birthPlace: bp, birthTime: bt, accuracyLevel: accx, selected: sel });
   };
 
   const goBack = () => {
     haptic('light');
-    try {
-      window.history.back();
-      return;
-    } catch {}
-    window.location.href = '/birth-chart';
+    router.push('/');
   };
 
-  const onCopy = async () => {
-    haptic('light');
-    const ok = await copyToClipboard(text || '');
-    setToast(ok ? 'Скопировано' : 'Не удалось скопировать');
+  const goAstroCompat = () => {
+    haptic('medium');
+    router.push('/astro-compat');
   };
-
-  const showMeta = Boolean(dob || place || time || dbSelected || payload);
-  const ready = Boolean(text) && !loading && !err;
 
   return (
     <main className="p">
-      <header className="hero">
-        <div className="title">РАЗБОР</div>
-        <div className="subtitle">{ready ? 'ОТЧЁТ ГОТОВ' : loading ? 'ПРОХОДИТ АНАЛИЗ...' : paid ? 'ОЖИДАЕМ ОТЧЁТ...' : 'ОЖИДАЕМ ОПЛАТУ...'}</div>
+      <header className="hero" aria-label="Заголовок">
+        <div className="title">АРКАНУМ</div>
+        <div className="subtitle">карта неба</div>
       </header>
 
-      {toastOn ? (
-        <div className="toast" aria-live="polite">
-          {toast}
-        </div>
-      ) : null}
+      <section className="card" aria-label="Совместимость">
+        <button type="button" className="compatBtn" onClick={goAstroCompat}>
+          Проверить астрологическую совместимость
+        </button>
+        <div className="compatHint">Отдельный режим: 2 человека → совместимость по карте неба.</div>
+      </section>
 
-      {err ? (
-        <section className="card">
+      {submitErr ? (
+        <section className="card" aria-label="Ошибка">
           <div className="label">Ошибка</div>
-          <div className="warn">{err}</div>
-          <div className="row">
-            <button type="button" className="btn" onClick={() => fetchFromDb(false)} disabled={loading}>
-              Обновить
-            </button>
-            <button type="button" className="btn2" onClick={goBack}>
-              Назад
-            </button>
-          </div>
+          <div className="warn">{submitErr}</div>
         </section>
       ) : null}
 
-      {info ? (
-        <section className="card">
-          <div className="label">Статус</div>
-          <div className="hint">{info}</div>
-          <div className="hint">
-            Оплата: <b>{paid ? 'подтверждена' : 'ожидается'}</b>
+      <section className="card" aria-label="Данные рождения">
+        <div className="label center">Данные рождения</div>
+        <div className="desc center">Дата обязательна. Место и время — усиливают точность.</div>
+
+        <div className="dob">
+          <div className="dobField">
+            <div className="dobLabel">День</div>
+            <input value={dd} onChange={(e) => onDayChange(e.target.value)} inputMode="numeric" placeholder="ДД" />
           </div>
-        </section>
-      ) : null}
+          <div className="dobField">
+            <div className="dobLabel">Месяц</div>
+            <input ref={mmRef} value={mm} onChange={(e) => onMonthChange(e.target.value)} inputMode="numeric" placeholder="ММ" />
+          </div>
+          <div className="dobField">
+            <div className="dobLabel">Год</div>
+            <input ref={yyyyRef} value={yyyy} onChange={(e) => onYearChange(e.target.value)} inputMode="numeric" placeholder="ГГГГ" />
+          </div>
+        </div>
 
-      {showMeta ? (
-        <section className="card">
-          <div className="label">Данные</div>
-          <div className="meta">
-            <div className="metaLine">
-              <b>Дата:</b> {dob || '—'}
-            </div>
-            <div className="metaLine">
-              <b>Место:</b> {place || '—'}
-            </div>
-            <div className="metaLine">
-              <b>Время:</b> {time || '—'}
-            </div>
+        {dd || mm || yyyy ? (dobOk ? <div className="hint center">Ок: {dobStr}</div> : <div className="warn center">Проверь дату.</div>) : null}
+        {dobOk && age !== null ? (
+          <div className="hint center">
+            Вам — <b>{age}</b> лет
+          </div>
+        ) : null}
 
-            {selectedKeysRu.length ? (
-              <div className="metaLine">
-                <b>Пункты:</b> {selectedKeysRu.join(', ')}
-              </div>
+        <div className="row1">
+          <div className="box">
+            <div className="miniLabel">Место рождения (опционально)</div>
+            <input
+              value={place}
+              onChange={(e) => setPlace(e.target.value)}
+              placeholder="Город, страна"
+              inputMode="text"
+              autoComplete="off"
+              spellCheck={false}
+            />
+            {place ? <div className={`miniHint ${hasPlace ? 'miniHint--ok' : ''}`}>{hasPlace ? 'Место принято' : 'Введите чуть точнее'}</div> : null}
+          </div>
+        </div>
+
+        <div className="row1">
+          <div className="box">
+            <div className="miniLabel">Время рождения (опционально)</div>
+            <div className="time">
+              <input value={hh} onChange={(e) => onHhChange(e.target.value)} inputMode="numeric" placeholder="ЧЧ" />
+              <div className="colon">:</div>
+              <input value={min} onChange={(e) => onMinChange(e.target.value)} inputMode="numeric" placeholder="ММ" />
+            </div>
+            {hasTime ? (
+              <div className={`miniHint ${timeOk ? 'miniHint--ok' : ''}`}>{timeOk ? `Ок: ${timeStr}` : 'Проверь время'}</div>
             ) : (
-              <div className="metaLine muted">Пункты не найдены.</div>
+              <div className="miniHint">Можно пропустить</div>
             )}
           </div>
-        </section>
-      ) : null}
-
-      <section className="card">
-        <div className="label">Отчёт</div>
-
-        {loading ? <div className="hint">Готовим разбор…</div> : null}
-        {!loading && !text ? <div className="hint">Пока пусто.</div> : null}
-
-        {text ? <pre className="out">{text}</pre> : null}
-
-        <div className="row">
-          <button type="button" className="btn2" onClick={onCopy} disabled={!ready}>
-            Скопировать
-          </button>
-          <button type="button" className="btn" onClick={openShare} disabled={!ready}>
-            Поделиться
-          </button>
         </div>
 
-        <div className="row">
-          <button type="button" className="btn" onClick={() => fetchFromDb(false)} disabled={loading}>
-            Обновить из БД
+        <div className="accuracy">
+          <div className="accTop">
+            <div className="accText">{accuracyText}</div>
+            <div className="accLevel">Уровень {accuracyLevel || 0}/3</div>
+          </div>
+          <div className="accBar" aria-label="Индикатор точности">
+            <span className={`seg ${accuracyLevel >= 1 ? 'on' : ''}`} />
+            <span className={`seg ${accuracyLevel >= 2 ? 'on' : ''}`} />
+            <span className={`seg ${accuracyLevel >= 3 ? 'on' : ''}`} />
+          </div>
+          <div className="accLegend">
+            <div className={`accL ${accuracyLevel === 1 ? 'accL--on' : ''}`}>Базовая</div>
+            <div className={`accL ${accuracyLevel === 2 ? 'accL--on' : ''}`}>Уточнённая</div>
+            <div className={`accL ${accuracyLevel === 3 ? 'accL--on' : ''}`}>Полная</div>
+          </div>
+        </div>
+      </section>
+
+      {baseOk ? (
+        <section className="card" aria-label="Выбор пунктов">
+          <div className="label">Что разобрать</div>
+          <div className="desc">Выберите необходимые пункты.</div>
+
+          <div className="stack">
+            {options.map((o) => {
+              const on = selected[o.key];
+              const isFixed = o.fixed === true;
+              return (
+                <button
+                  key={o.key}
+                  type="button"
+                  className={`opt ${on ? 'opt--on' : ''} ${isFixed ? 'opt--fixed' : ''}`}
+                  onClick={() => toggleOption(o.key)}
+                  disabled={isFixed || submitting}
+                >
+                  <div className="optText">
+                    <div className="optT">{o.title}</div>
+                    <div className="optS">{o.sub}</div>
+                  </div>
+                  <div className="optR">
+                    {isFixed ? <span className="fixed">✓ {o.price} ₽</span> : on ? <span className="tick">✓</span> : <span className="plus">+{o.price} ₽</span>}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="total">
+            <div className="totalL">
+              <div className="totalT">Итого</div>
+              <div className="totalS">
+                Пункты: <b>{paidCount}</b> × {PRICE_RUB} ₽ + Итог {SUMMARY_PRICE_RUB} ₽
+              </div>
+            </div>
+            <div className="totalR">{totalRub} ₽</div>
+          </div>
+
+          <button type="button" className={`send ${submitDisabled ? 'send--off' : ''}`} disabled={submitDisabled} onClick={onSubmit}>
+            {submitting ? 'Открываю оплату…' : 'Продолжить'}
           </button>
-          <button type="button" className="btn2" onClick={goBack}>
+
+          <button type="button" className="back" onClick={goBack} disabled={submitting}>
             Назад
           </button>
-        </div>
-
-        <div className="row">
-          <button type="button" className="btn3" onClick={forceAnalyze} disabled={loading || !paid}>
-            Пересоздать отчёт (OpenAI)
+        </section>
+      ) : (
+        <section className="card" aria-label="Подсказка">
+          <div className="label">Дальше</div>
+          <div className="hint">Введите дату рождения. Место и время — по желанию.</div>
+          <button type="button" className="back" onClick={goBack}>
+            Назад
           </button>
-        </div>
-      </section>
-
-      <section className="bottom" aria-label="Назад">
-        <button type="button" className="backBtn" onClick={goBack}>
-          Назад
-        </button>
-      </section>
+        </section>
+      )}
 
       <style jsx>{`
         .p {
@@ -570,38 +538,53 @@ export default function ReportClient() {
           overflow: hidden;
         }
 
+        .hero::before {
+          content: '';
+          position: absolute;
+          inset: -2px;
+          background: radial-gradient(760px 260px at 50% -10%, rgba(139, 92, 246, 0.26) 0%, rgba(139, 92, 246, 0) 62%),
+            radial-gradient(760px 260px at 10% 120%, rgba(45, 126, 247, 0.14) 0%, rgba(45, 126, 247, 0) 58%),
+            radial-gradient(900px 420px at 90% 130%, rgba(245, 158, 11, 0.08) 0%, rgba(245, 158, 11, 0) 60%);
+          pointer-events: none;
+        }
+
         .title {
+          position: relative;
           font-family: Montserrat, Manrope, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, 'Helvetica Neue', Arial;
           font-weight: 900;
-          letter-spacing: 0.18em;
+          letter-spacing: 0.22em;
           text-transform: uppercase;
-          font-size: 24px;
+          font-size: 28px;
           line-height: 1.05;
           margin: 0 0 6px;
-          color: rgba(233, 236, 255, 0.92);
+          color: transparent;
+          background: linear-gradient(115deg, #fff3cf 0%, #d2b35b 18%, #f6e7b0 36%, #b8892a 54%, #fff3cf 72%, #d2b35b 100%);
+          background-size: 220% 100%;
+          -webkit-background-clip: text;
+          background-clip: text;
+          text-shadow: 0 1px 0 rgba(255, 255, 255, 0.06), 0 18px 44px rgba(0, 0, 0, 0.65);
+          animation: shimmer 3.2s ease-in-out infinite;
+          will-change: background-position;
+        }
+
+        @keyframes shimmer {
+          0% {
+            background-position: 0% 50%;
+          }
+          50% {
+            background-position: 100% 50%;
+          }
+          100% {
+            background-position: 0% 50%;
+          }
         }
 
         .subtitle {
+          position: relative;
           font-size: 12px;
           color: rgba(233, 236, 255, 0.64);
           letter-spacing: 0.14em;
           text-transform: uppercase;
-        }
-
-        .toast {
-          width: 100%;
-          max-width: 520px;
-          padding: 10px 12px;
-          border-radius: 14px;
-          border: 1px solid rgba(233, 236, 255, 0.12);
-          background: rgba(12, 16, 32, 0.7);
-          color: rgba(233, 236, 255, 0.9);
-          font-size: 12px;
-          font-weight: 850;
-          text-align: center;
-          box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
-          backdrop-filter: blur(12px);
-          -webkit-backdrop-filter: blur(12px);
         }
 
         .card {
@@ -618,6 +601,32 @@ export default function ReportClient() {
           overflow: hidden;
         }
 
+        .compatBtn {
+          width: 100%;
+          border-radius: 999px;
+          padding: 13px 14px;
+          font-size: 14px;
+          font-weight: 950;
+          cursor: pointer;
+          -webkit-tap-highlight-color: transparent;
+          border: 1px solid rgba(139, 92, 246, 0.45);
+          color: rgba(233, 236, 255, 0.95);
+          background: rgba(139, 92, 246, 0.14);
+          box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(139, 92, 246, 0.12);
+        }
+
+        .compatBtn:active {
+          transform: scale(0.99);
+          opacity: 0.92;
+        }
+
+        .compatHint {
+          font-size: 12px;
+          font-weight: 800;
+          color: rgba(233, 236, 255, 0.62);
+          text-align: center;
+        }
+
         .label {
           font-size: 16px;
           font-weight: 950;
@@ -625,11 +634,129 @@ export default function ReportClient() {
           letter-spacing: -0.01em;
         }
 
+        .desc {
+          font-size: 13px;
+          font-weight: 700;
+          color: rgba(233, 236, 255, 0.68);
+          line-height: 1.35;
+        }
+
+        .center {
+          text-align: center;
+        }
+
+        .dob {
+          display: grid;
+          grid-template-columns: 1fr 1fr 1.35fr;
+          gap: 10px;
+        }
+
+        .dobField {
+          border-radius: 16px;
+          border: 1px solid rgba(233, 236, 255, 0.14);
+          background: rgba(255, 255, 255, 0.03);
+          padding: 10px 10px 12px;
+        }
+
+        .dobLabel {
+          font-size: 11px;
+          color: rgba(233, 236, 255, 0.62);
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+          margin-bottom: 6px;
+          text-align: center;
+        }
+
+        .dobField input {
+          width: 100%;
+          border: 0;
+          outline: none;
+          background: transparent;
+          color: var(--text);
+          font-size: 18px;
+          font-weight: 950;
+          letter-spacing: 0.04em;
+          text-align: center;
+        }
+
+        .row1 {
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+        }
+
+        .box {
+          border-radius: 16px;
+          border: 1px solid rgba(233, 236, 255, 0.14);
+          background: rgba(255, 255, 255, 0.03);
+          padding: 10px 10px 12px;
+        }
+
+        .miniLabel {
+          font-size: 11px;
+          color: rgba(233, 236, 255, 0.62);
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+          margin-bottom: 6px;
+          text-align: center;
+        }
+
+        .box input {
+          width: 100%;
+          border: 0;
+          outline: none;
+          background: transparent;
+          color: var(--text);
+          font-size: 14px;
+          font-weight: 900;
+          letter-spacing: 0.01em;
+          text-align: center;
+        }
+
+        .time {
+          display: grid;
+          grid-template-columns: 1fr 22px 1fr;
+          align-items: center;
+          gap: 6px;
+        }
+
+        .time input {
+          width: 100%;
+          border: 0;
+          outline: none;
+          background: transparent;
+          color: var(--text);
+          font-size: 16px;
+          font-weight: 950;
+          letter-spacing: 0.04em;
+          text-align: center;
+        }
+
+        .colon {
+          text-align: center;
+          color: rgba(233, 236, 255, 0.62);
+          font-weight: 900;
+        }
+
+        .miniHint {
+          margin-top: 8px;
+          font-size: 12px;
+          font-weight: 800;
+          color: rgba(233, 236, 255, 0.58);
+          text-align: center;
+        }
+
+        .miniHint--ok {
+          color: rgba(210, 179, 91, 0.92);
+        }
+
         .hint {
+          margin-top: 4px;
           font-size: 12px;
           font-weight: 800;
           color: rgba(233, 236, 255, 0.62);
-          padding-top: 6px;
+          padding-top: 10px;
+          border-top: 1px solid rgba(233, 236, 255, 0.1);
           overflow-wrap: anywhere;
         }
 
@@ -638,112 +765,239 @@ export default function ReportClient() {
           font-weight: 850;
           color: rgba(255, 180, 180, 0.95);
           overflow-wrap: anywhere;
+          padding-top: 10px;
+          border-top: 1px solid rgba(233, 236, 255, 0.1);
+          text-align: center;
         }
 
-        .meta {
+        .accuracy {
+          margin-top: 2px;
+          border-top: 1px solid rgba(233, 236, 255, 0.1);
+          padding-top: 12px;
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+
+        .accTop {
+          display: flex;
+          align-items: baseline;
+          justify-content: space-between;
+          gap: 10px;
+        }
+
+        .accText {
+          font-size: 12px;
+          font-weight: 900;
+          color: rgba(233, 236, 255, 0.82);
+        }
+
+        .accLevel {
+          font-size: 12px;
+          font-weight: 900;
+          color: rgba(233, 236, 255, 0.55);
+        }
+
+        .accBar {
+          display: grid;
+          grid-template-columns: 1fr 1fr 1fr;
+          gap: 8px;
+        }
+
+        .seg {
+          height: 10px;
+          border-radius: 999px;
+          border: 1px solid rgba(233, 236, 255, 0.14);
+          background: rgba(255, 255, 255, 0.03);
+          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+        }
+
+        .seg.on {
+          border-color: rgba(210, 179, 91, 0.35);
+          background: rgba(210, 179, 91, 0.16);
+          box-shadow: 0 10px 26px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+        }
+
+        .accLegend {
+          display: grid;
+          grid-template-columns: 1fr 1fr 1fr;
+          gap: 8px;
+          font-size: 11px;
+          font-weight: 850;
+          color: rgba(233, 236, 255, 0.55);
+          text-align: center;
+        }
+
+        .accL--on {
+          color: rgba(210, 179, 91, 0.92);
+        }
+
+        .stack {
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+        }
+
+        .opt {
+          width: 100%;
+          border-radius: 18px;
+          padding: 14px 12px;
+          border: 1px solid rgba(233, 236, 255, 0.12);
+          background: rgba(255, 255, 255, 0.03);
+          box-shadow: 0 10px 26px rgba(0, 0, 0, 0.38);
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+          cursor: pointer;
+          -webkit-tap-highlight-color: transparent;
+          text-align: left;
+          overflow: hidden;
+        }
+
+        .opt--on {
+          border-color: rgba(210, 179, 91, 0.4);
+          background: rgba(255, 255, 255, 0.04);
+        }
+
+        .opt--fixed {
+          cursor: default;
+          opacity: 0.92;
+        }
+
+        .opt:active {
+          transform: scale(0.99);
+          opacity: 0.92;
+        }
+
+        .opt:disabled:active {
+          transform: none;
+          opacity: 0.92;
+        }
+
+        .optText {
+          min-width: 0;
+          flex: 1;
+        }
+
+        .optT {
+          font-weight: 950;
+          color: rgba(233, 236, 255, 0.92);
+          font-size: 14px;
+        }
+
+        .optS {
+          margin-top: 3px;
+          font-size: 12px;
+          color: rgba(233, 236, 255, 0.62);
+          line-height: 1.25;
+        }
+
+        .optR {
+          width: 96px;
+          text-align: right;
+          font-weight: 950;
+          flex: 0 0 96px;
+        }
+
+        .tick {
+          color: rgba(210, 179, 91, 0.95);
+          font-size: 18px;
+        }
+
+        .plus {
+          color: rgba(233, 236, 255, 0.7);
+          font-size: 12px;
+          white-space: nowrap;
+        }
+
+        .fixed {
+          color: rgba(210, 179, 91, 0.95);
+          font-size: 12px;
+          white-space: nowrap;
+        }
+
+        .total {
+          margin-top: 2px;
+          padding-top: 12px;
+          border-top: 1px solid rgba(233, 236, 255, 0.1);
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+        }
+
+        .totalT {
+          font-weight: 950;
+          color: rgba(233, 236, 255, 0.92);
+          font-size: 14px;
+        }
+
+        .totalS {
+          margin-top: 3px;
           font-size: 12px;
           font-weight: 800;
-          color: rgba(233, 236, 255, 0.7);
-          word-break: break-word;
+          color: rgba(233, 236, 255, 0.62);
         }
 
-        .metaLine + .metaLine {
-          margin-top: 4px;
+        .totalR {
+          font-weight: 950;
+          color: rgba(210, 179, 91, 0.95);
+          font-size: 16px;
+          letter-spacing: 0.02em;
+          white-space: nowrap;
         }
 
-        .muted {
-          opacity: 0.7;
+        .send {
+          margin-top: 2px;
+          border: 1px solid rgba(210, 179, 91, 0.35);
+          border-radius: 999px;
+          padding: 12px 14px;
+          font-size: 14px;
+          font-weight: 950;
+          color: var(--text);
+          cursor: pointer;
+          background: rgba(255, 255, 255, 0.04);
+          box-shadow: 0 14px 38px rgba(0, 0, 0, 0.45);
+          -webkit-tap-highlight-color: transparent;
         }
 
-        .out {
-          margin: 0;
-          padding: 12px;
-          border-radius: 16px;
-          border: 1px solid rgba(233, 236, 255, 0.1);
-          background: rgba(0, 0, 0, 0.25);
-          color: rgba(233, 236, 255, 0.92);
-          font-size: 13px;
-          line-height: 1.45;
-          white-space: pre-wrap;
-          word-break: break-word;
+        .send:active {
+          transform: scale(0.98);
+          opacity: 0.92;
         }
 
-        .row {
-          display: flex;
-          gap: 10px;
-          margin-top: 4px;
+        .send--off {
+          opacity: 0.55;
+          cursor: not-allowed;
+          box-shadow: none;
         }
 
-        .btn,
-        .btn2,
-        .btn3 {
-          flex: 1;
+        .back {
+          margin-top: 6px;
           border-radius: 999px;
           padding: 12px 14px;
           font-size: 14px;
           font-weight: 950;
           cursor: pointer;
           -webkit-tap-highlight-color: transparent;
-        }
-
-        .btn {
-          border: 1px solid rgba(210, 179, 91, 0.35);
-          color: var(--text);
-          background: rgba(255, 255, 255, 0.04);
-          box-shadow: 0 14px 38px rgba(0, 0, 0, 0.45);
-        }
-
-        .btn:disabled,
-        .btn2:disabled,
-        .btn3:disabled {
-          opacity: 0.55;
-          cursor: not-allowed;
-          box-shadow: none;
-        }
-
-        .btn2 {
           border: 1px solid rgba(233, 236, 255, 0.14);
           color: rgba(233, 236, 255, 0.92);
           background: rgba(255, 255, 255, 0.03);
         }
 
-        .btn3 {
-          border: 1px solid rgba(233, 236, 255, 0.14);
-          color: rgba(233, 236, 255, 0.92);
-          background: rgba(255, 255, 255, 0.02);
-        }
-
-        .btn:active,
-        .btn2:active,
-        .btn3:active {
+        .back:active {
           transform: scale(0.99);
           opacity: 0.92;
         }
 
-        .bottom {
-          margin-top: 14px;
-        }
-
-        .backBtn {
-          width: 100%;
-          padding: 14px 14px;
-          border-radius: 18px;
-          border: 1px solid rgba(233, 236, 255, 0.14);
-          background: rgba(255, 255, 255, 0.03);
-          color: rgba(233, 236, 255, 0.92);
-          font-size: 14px;
-          font-weight: 900;
-          letter-spacing: 0.02em;
-          cursor: pointer;
-          -webkit-tap-highlight-color: transparent;
-          box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
-          backdrop-filter: blur(16px);
-          -webkit-backdrop-filter: blur(16px);
-        }
-
-        .backBtn:active {
-          transform: scale(0.99);
-          opacity: 0.92;
+        @media (max-width: 360px) {
+          .dob {
+            grid-template-columns: 1fr 1fr;
+          }
+          .dobField:last-child {
+            grid-column: 1 / -1;
+          }
         }
       `}</style>
     </main>
