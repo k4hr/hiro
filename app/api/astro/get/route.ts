@@ -17,6 +17,12 @@ function envClean(name: string) {
   return String(process.env[name] ?? '').replace(/[\r\n]/g, '').trim();
 }
 
+function getRuProxyBase() {
+  return String(process.env.YOOKASSA_RU_PROXY_BASE || '')
+    .trim()
+    .replace(/\/+$/, '');
+}
+
 function timingSafeEqualHex(a: string, b: string) {
   try {
     const ab = Buffer.from(a, 'hex');
@@ -94,25 +100,127 @@ function cleanTime(v: any): string {
   return String(v ?? '').replace(/\s+/g, '').trim().slice(0, 8);
 }
 
-function getPaymentStatusFromPricing(pricingJson: any): string {
-  const candidates = [
-    pricingJson?.yookassa?.status,
-    pricingJson?.paymentStatus,
-    pricingJson?.status,
-    pricingJson?.payment?.status,
-  ];
-
-  for (const c of candidates) {
-    const s = String(c || '').trim().toLowerCase();
-    if (s) return s;
-  }
-
-  return '';
+function lc(v: any) {
+  return String(v ?? '').trim().toLowerCase();
 }
 
-function isPaidPricing(pricingJson: any): boolean {
-  const status = getPaymentStatusFromPricing(pricingJson);
-  return status === 'succeeded' || status === 'waiting_for_capture';
+function extractPaid(last: any): boolean {
+  const reportStatus = lc(last?.status);
+
+  if (reportStatus === 'ready' || reportStatus === 'analyzing' || reportStatus === 'processing') {
+    return true;
+  }
+
+  const pricing = last?.pricingJson && typeof last.pricingJson === 'object' ? last.pricingJson : {};
+  const input = last?.input && typeof last.input === 'object' ? last.input : {};
+
+  const candidates = [
+    pricing?.yookassa?.status,
+    pricing?.payment?.status,
+    pricing?.paymentStatus,
+    pricing?.status,
+
+    input?.yookassa?.status,
+    input?.payment?.status,
+    input?.paymentStatus,
+    input?.status,
+  ]
+    .map((x) => lc(x))
+    .filter(Boolean);
+
+  return candidates.some((s) =>
+    ['succeeded', 'paid', 'success', 'captured', 'waiting_for_capture', 'authorized'].includes(s)
+  );
+}
+
+function extractPaymentStatus(last: any): string {
+  const pricing = last?.pricingJson && typeof last.pricingJson === 'object' ? last.pricingJson : {};
+  const input = last?.input && typeof last.input === 'object' ? last.input : {};
+
+  return (
+    String(
+      pricing?.yookassa?.status ??
+        pricing?.payment?.status ??
+        pricing?.paymentStatus ??
+        pricing?.status ??
+        input?.yookassa?.status ??
+        input?.payment?.status ??
+        input?.paymentStatus ??
+        input?.status ??
+        ''
+    ).trim() || null
+  ) as any;
+}
+
+async function readJsonSafe(res: Response) {
+  const text = await res.text().catch(() => '');
+  if (!text) return null;
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { _raw: text };
+  }
+}
+
+async function syncPaymentStatusFromProxy(last: any) {
+  try {
+    const paymentId = String((last?.pricingJson as any)?.yookassa?.paymentId ?? '').trim();
+    if (!paymentId) return last;
+
+    const currentStatus = lc((last?.pricingJson as any)?.yookassa?.status);
+    if (currentStatus === 'succeeded') return last;
+
+    const proxyBase = getRuProxyBase();
+    if (!proxyBase) return last;
+
+    const r = await fetch(`${proxyBase}/get-payment?paymentId=${encodeURIComponent(paymentId)}`, {
+      method: 'GET',
+      cache: 'no-store',
+      headers: { Accept: 'application/json' },
+    });
+
+    const data = await readJsonSafe(r);
+    if (!r.ok || !(data as any)?.ok) return last;
+
+    const remoteStatus = String((data as any)?.status ?? '').trim();
+    const remotePaid = Boolean((data as any)?.paid);
+    const remoteAmount = (data as any)?.amount ?? null;
+    const remoteMetadata = (data as any)?.metadata ?? null;
+
+    const nextPricing = {
+      ...((last?.pricingJson && typeof last.pricingJson === 'object') ? last.pricingJson : {}),
+      yookassa: {
+        ...(((last?.pricingJson as any)?.yookassa && typeof (last?.pricingJson as any)?.yookassa === 'object')
+          ? (last?.pricingJson as any).yookassa
+          : {}),
+        paymentId,
+        status: remoteStatus || (last?.pricingJson as any)?.yookassa?.status || null,
+        syncedAt: new Date().toISOString(),
+        amount: remoteAmount ?? (last?.pricingJson as any)?.yookassa?.amount ?? null,
+        metadata: remoteMetadata ?? (last?.pricingJson as any)?.yookassa?.metadata ?? null,
+      },
+    } as any;
+
+    if (remotePaid || lc(remoteStatus) === 'succeeded') {
+      nextPricing.yookassa.paidAt = nextPricing.yookassa.paidAt || new Date().toISOString();
+    }
+
+    await prisma.report.update({
+      where: { id: last.id },
+      data: {
+        pricingJson: nextPricing,
+      },
+    });
+
+    return {
+      ...last,
+      pricingJson: nextPricing,
+    };
+  } catch (e: any) {
+    console.log('[ASTRO_GET_PROXY_SYNC_ERROR]', String(e?.message ?? e));
+    return last;
+  }
 }
 
 export async function POST(req: Request) {
@@ -138,22 +246,16 @@ export async function POST(req: Request) {
     const user = await prisma.user.findUnique({ where: { telegramId }, select: { id: true } });
     if (!user) return NextResponse.json({ ok: false, error: 'NO_USER' }, { status: 404 });
 
-    let last:
-      | {
-          id: string;
-          status: string;
-          createdAt: Date;
-          errorCode: string | null;
-          errorText: string | null;
-          input: any;
-          text: string | null;
-          pricingJson: any;
-        }
-      | null = null;
+    let last: any = null;
 
     if (reportId) {
-      last = await prisma.report.findUnique({
-        where: { id: reportId },
+      last = await prisma.report.findFirst({
+        where: {
+          id: reportId,
+          userId: user.id,
+          type: 'ASTRO',
+          astroMode: 'CHART',
+        },
         select: {
           id: true,
           status: true,
@@ -163,14 +265,8 @@ export async function POST(req: Request) {
           input: true,
           text: true,
           pricingJson: true,
-          userId: true,
-          type: true,
-        } as any,
+        },
       });
-
-      if (!last) return NextResponse.json({ ok: false, error: 'NO_REPORT' }, { status: 404 });
-      if ((last as any).userId !== user.id) return NextResponse.json({ ok: false, error: 'FORBIDDEN' }, { status: 403 });
-      if ((last as any).type !== 'ASTRO') return NextResponse.json({ ok: false, error: 'BAD_REPORT_TYPE' }, { status: 400 });
     } else {
       if (!dob) return NextResponse.json({ ok: false, error: 'NO_DOB' }, { status: 400 });
 
@@ -200,9 +296,13 @@ export async function POST(req: Request) {
       });
     }
 
+    if (last && !extractPaid(last)) {
+      last = await syncPaymentStatusFromProxy(last);
+    }
+
     const hasText = Boolean(last?.status === 'READY' && last?.text);
-    const paymentStatus = getPaymentStatusFromPricing(last?.pricingJson);
-    const paid = isPaidPricing(last?.pricingJson);
+    const paid = extractPaid(last);
+    const paymentStatus = extractPaymentStatus(last);
 
     return NextResponse.json({
       ok: true,
@@ -223,6 +323,9 @@ export async function POST(req: Request) {
     });
   } catch (e: any) {
     console.error('[ASTRO_GET_ERROR]', e);
-    return NextResponse.json({ ok: false, error: 'GET_FAILED', hint: String(e?.message || 'See server logs') }, { status: 500 });
+    return NextResponse.json(
+      { ok: false, error: 'GET_FAILED', hint: String(e?.message || 'See server logs') },
+      { status: 500 }
+    );
   }
 }
