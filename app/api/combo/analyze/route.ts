@@ -1,4 +1,3 @@
-/* path: app/api/combo/analyze/route.ts */
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { prisma } from '@/lib/prisma';
@@ -64,9 +63,7 @@ function verifyTelegramWebAppInitData(initData: string, botToken: string, maxAge
   const secretKey = crypto.createHmac('sha256', 'WebAppData').update(botToken).digest();
   const computedHash = crypto.createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
 
-  if (!timingSafeEqualHex(computedHash, hash)) {
-    return { ok: false as const, error: 'BAD_HASH' as const };
-  }
+  if (!timingSafeEqualHex(computedHash, hash)) return { ok: false as const, error: 'BAD_HASH' as const };
 
   const userStr = params.get('user');
   if (!userStr) return { ok: false as const, error: 'NO_USER' as const };
@@ -110,39 +107,14 @@ function safeNum(v: any): number | null {
   return n;
 }
 
-function pickSelected(selected: Record<string, any> | null | undefined): OptionKey[] {
-  const keys: OptionKey[] = [
-    'COMBO_RESONANCE',
-    'COMBO_STRENGTHS',
-    'COMBO_WEAKNESSES',
-    'COMBO_MONEY',
-    'COMBO_CAREER',
-    'COMBO_COMM',
-    'COMBO_ENERGY',
-    'COMBO_LESSON',
-    'SUMMARY',
-  ];
-
-  const out: OptionKey[] = [];
-  if (!selected || typeof selected !== 'object') return ['SUMMARY'];
-
-  for (const k of keys) {
-    if (k === 'SUMMARY') continue;
-    if ((selected as any)[k] === true) out.push(k);
-  }
-
-  out.push('SUMMARY');
-  return out;
-}
-
 function optionTitle(k: OptionKey) {
   switch (k) {
     case 'COMBO_RESONANCE':
       return 'Резонанс имени и жизненного пути';
     case 'COMBO_STRENGTHS':
-      return 'Сильные стороны комбо';
+      return 'Сильные стороны';
     case 'COMBO_WEAKNESSES':
-      return 'Слабые места комбо';
+      return 'Слабые места';
     case 'COMBO_MONEY':
       return 'Деньги и стратегия заработка';
     case 'COMBO_CAREER':
@@ -152,12 +124,36 @@ function optionTitle(k: OptionKey) {
     case 'COMBO_ENERGY':
       return 'Энергия и режим';
     case 'COMBO_LESSON':
-      return 'Главный урок комбо';
+      return 'Главный урок';
     case 'SUMMARY':
       return 'Итог + общие советы';
     default:
       return String(k);
   }
+}
+
+function pickSelected(selected: Record<string, any> | null | undefined): OptionKey[] {
+  const paid: OptionKey[] = [
+    'COMBO_RESONANCE',
+    'COMBO_STRENGTHS',
+    'COMBO_WEAKNESSES',
+    'COMBO_MONEY',
+    'COMBO_CAREER',
+    'COMBO_COMM',
+    'COMBO_ENERGY',
+    'COMBO_LESSON',
+  ];
+
+  const out: OptionKey[] = [];
+
+  if (selected && typeof selected === 'object') {
+    for (const k of paid) {
+      if ((selected as any)[k] === true) out.push(k);
+    }
+  }
+
+  out.push('SUMMARY');
+  return out;
 }
 
 function buildPrompt(args: { dob: string; age: number | null; name: string; selectedList: OptionKey[] }) {
@@ -181,7 +177,7 @@ function buildPrompt(args: { dob: string; age: number | null; name: string; sele
     'ПРАВИЛО ДЛЯ РАСЧЁТА ЧИСЛА ИМЕНИ:',
     'Используй русскую алфавитную нумерацию 1–9 по кругу:',
     'А1 Б2 В3 Г4 Д5 Е6 Ё7 Ж8 З9 И1 Й2 К3 Л4 М5 Н6 О7 П8 Р9 С1 Т2 У3 Ф4 Х5 Ц6 Ч7 Ш8 Щ9 Ъ1 Ы2 Ь3 Э4 Ю5 Я6.',
-    'Сложи значения букв имени, затем сведи к 1–9. Если получается 11 или 22 — оставь как 11 или 22 (не своди дальше).',
+    'Сложи значения букв имени, затем сведи к 1–9. Если получается 11 или 22 — оставь как 11 или 22.',
     '',
     'ФОРМАТ ОТВЕТА (СТРОГО):',
     'Пункты только в виде 1), 2), 3)… в порядке, который дан в СПИСКЕ ПУНКТОВ НИЖЕ.',
@@ -199,7 +195,7 @@ function buildPrompt(args: { dob: string; age: number | null; name: string; sele
     '',
     'ОБЯЗАТЕЛЬНО ДЛЯ ПУНКТА "Резонанс имени и жизненного пути":',
     'В блоке "Б) Значение" дай короткую оценку совместимости имени и даты одной строкой: "Совместимость имени и даты: высокая/средняя/низкая".',
-    'Сразу после этой строки дай 2 причины на основе расчётов (какие числа совпали/дополняют/конфликтуют).',
+    'Сразу после этой строки дай 2 причины на основе расчётов (какие числа совпали, дополняют или конфликтуют).',
     '',
     'ВАЖНО ПРО ИТОГ:',
     'Пункт "Итог + общие советы" всегда последний.',
@@ -215,16 +211,14 @@ function buildPrompt(args: { dob: string; age: number | null; name: string; sele
 async function callOpenAI(args: { apiKey: string; prompt: string }) {
   const res = await fetch('https://api.openai.com/v1/responses', {
     method: 'POST',
-    headers: { Authorization: `Bearer ${args.apiKey}`, 'Content-Type': 'application/json' },
+    headers: {
+      Authorization: `Bearer ${args.apiKey}`,
+      'Content-Type': 'application/json',
+    },
     body: JSON.stringify({
       model: 'gpt-5.2',
       reasoning: { effort: 'low' },
-      input: [
-        {
-          role: 'user',
-          content: [{ type: 'input_text', text: args.prompt }],
-        },
-      ],
+      input: [{ role: 'user', content: [{ type: 'input_text', text: args.prompt }] }],
     }),
   });
 
@@ -234,17 +228,21 @@ async function callOpenAI(args: { apiKey: string; prompt: string }) {
       (j?.error?.message ? String(j.error.message) : '') ||
       (j?.error ? JSON.stringify(j.error) : '') ||
       `OPENAI_FAILED(${res.status})`;
+
     return { ok: false as const, error: msg, raw: j };
   }
 
   let outText = '';
+
   if (typeof j.output_text === 'string' && j.output_text.trim()) {
     outText = j.output_text.trim();
   } else if (Array.isArray(j.output)) {
     for (const item of j.output) {
       if (item?.type === 'message' && Array.isArray(item.content)) {
         for (const c of item.content) {
-          if (c?.type === 'output_text' && typeof c.text === 'string') outText += c.text;
+          if (c?.type === 'output_text' && typeof c.text === 'string') {
+            outText += c.text;
+          }
         }
       }
     }
@@ -253,6 +251,25 @@ async function callOpenAI(args: { apiKey: string; prompt: string }) {
 
   if (!outText) return { ok: false as const, error: 'EMPTY_MODEL_OUTPUT', raw: j };
   return { ok: true as const, text: outText, raw: j };
+}
+
+function sameSelectedList(a: any, b: any): boolean {
+  try {
+    const aa = Array.isArray(a) ? a.map(String) : [];
+    const bb = Array.isArray(b) ? b.map(String) : [];
+    return JSON.stringify(aa) === JSON.stringify(bb);
+  } catch {
+    return false;
+  }
+}
+
+function lc(v: any) {
+  return String(v ?? '').trim().toLowerCase();
+}
+
+function isPaidByPricing(pricingJson: any): boolean {
+  const status = lc(pricingJson?.yookassa?.status);
+  return ['succeeded', 'paid', 'success', 'captured'].includes(status);
 }
 
 export async function POST(req: Request) {
@@ -269,6 +286,8 @@ export async function POST(req: Request) {
     if (!body) return NextResponse.json({ ok: false, error: 'BAD_JSON' }, { status: 400 });
 
     const initData = String(body.initData || '').trim();
+    reportId = String(body.reportId || '').trim() || null;
+
     const dob = String(body.dob || '').trim();
     const name = cleanName(body.name);
     const age = safeNum(body.age);
@@ -285,98 +304,194 @@ export async function POST(req: Request) {
     const v = verifyTelegramWebAppInitData(initData, botToken);
     if (!v.ok) return NextResponse.json({ ok: false, error: v.error }, { status: 401 });
 
-    const telegramId = v.user.id;
-    const user = await prisma.user.findUnique({ where: { telegramId }, select: { id: true } });
-    if (!user) return NextResponse.json({ ok: false, error: 'NO_USER' }, { status: 404 });
-
-    const lastReady = await prisma.report.findFirst({
-      where: { userId: user.id, type: 'NUM', numMode: 'COMBO', numDob1: dobDate, numName1: name, status: 'READY' },
-      orderBy: { createdAt: 'desc' },
-      select: { id: true, text: true },
-    });
-    if (lastReady?.text) {
-      return NextResponse.json({ ok: true, text: lastReady.text, cached: true });
-    }
-
-    const lastAny = await prisma.report.findFirst({
-      where: { userId: user.id, type: 'NUM', numMode: 'COMBO', numDob1: dobDate, numName1: name },
-      orderBy: { createdAt: 'desc' },
-      select: { id: true, status: true, input: true, text: true },
-    });
-
-    const selectedObj =
-      selectedFromReq ??
-      ((lastAny?.input && typeof lastAny.input === 'object' && (lastAny.input as any).selected) ? (lastAny.input as any).selected : undefined);
-
-    const selectedList = pickSelected(selectedObj);
-    if (!selectedList.length) return NextResponse.json({ ok: false, error: 'NO_SELECTED' }, { status: 400 });
-
-    const draft = await prisma.report.findFirst({
-      where: { userId: user.id, type: 'NUM', numMode: 'COMBO', numDob1: dobDate, numName1: name, status: 'DRAFT' },
-      orderBy: { createdAt: 'desc' },
+    const user = await prisma.user.findUnique({
+      where: { telegramId: v.user.id },
       select: { id: true },
     });
+    if (!user) return NextResponse.json({ ok: false, error: 'NO_USER' }, { status: 404 });
+
+    const wantedList = pickSelected({ ...(selectedFromReq ?? {}), SUMMARY: true });
+
+    let currentReport: any = null;
+
+    if (reportId) {
+      currentReport = await prisma.report.findFirst({
+        where: {
+          id: reportId,
+          userId: user.id,
+          type: 'NUM',
+          numMode: 'COMBO',
+        },
+        select: {
+          id: true,
+          status: true,
+          text: true,
+          input: true,
+          pricingJson: true,
+          errorCode: true,
+          errorText: true,
+        },
+      });
+
+      if (!currentReport) {
+        return NextResponse.json({ ok: false, error: 'REPORT_NOT_FOUND' }, { status: 404 });
+      }
+    } else {
+      currentReport = await prisma.report.findFirst({
+        where: {
+          userId: user.id,
+          type: 'NUM',
+          numMode: 'COMBO',
+          numDob1: dobDate,
+          numName1: name,
+        },
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          status: true,
+          text: true,
+          input: true,
+          pricingJson: true,
+          errorCode: true,
+          errorText: true,
+        },
+      });
+
+      if (!currentReport) {
+        return NextResponse.json({ ok: false, error: 'REPORT_NOT_FOUND' }, { status: 404 });
+      }
+
+      reportId = currentReport.id;
+    }
+
+    if (!isPaidByPricing(currentReport.pricingJson)) {
+      return NextResponse.json({ ok: false, error: 'PAYMENT_NOT_CONFIRMED' }, { status: 402 });
+    }
+
+    if (
+      String(currentReport.status || '').toUpperCase() === 'READY' &&
+      typeof currentReport.text === 'string' &&
+      currentReport.text.trim()
+    ) {
+      return NextResponse.json({ ok: true, text: currentReport.text, cached: true });
+    }
+
+    const lastReady = await prisma.report.findFirst({
+      where: {
+        userId: user.id,
+        type: 'NUM',
+        numMode: 'COMBO',
+        numDob1: dobDate,
+        numName1: name,
+        status: 'READY',
+      },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        text: true,
+        input: true,
+        json: true,
+      },
+    });
+
+    if (lastReady?.text) {
+      const prevList = (lastReady.input as any)?.selectedList;
+
+      if (sameSelectedList(prevList, wantedList)) {
+        const inputJson = {
+          mode: 'COMBO',
+          dob,
+          name,
+          age,
+          selected: { ...(selectedFromReq ?? {}), SUMMARY: true },
+          selectedList: wantedList,
+          analyzedAt: new Date().toISOString(),
+        };
+
+        await prisma.report.update({
+          where: { id: reportId! },
+          data: {
+            status: 'READY',
+            text: lastReady.text,
+            input: inputJson,
+            json: lastReady.json ?? null,
+            errorCode: null,
+            errorText: null,
+          },
+        });
+
+        return NextResponse.json({ ok: true, text: lastReady.text, cached: true });
+      }
+    }
 
     const inputJson = {
       mode: 'COMBO',
       dob,
       name,
       age,
-      selected: selectedObj ?? null,
-      selectedList,
+      selected: { ...(selectedFromReq ?? {}), SUMMARY: true },
+      selectedList: wantedList,
       analyzedAt: new Date().toISOString(),
     };
 
-    if (draft) {
-      reportId = draft.id;
-      await prisma.report.update({
-        where: { id: reportId },
-        data: { input: inputJson, errorCode: null, errorText: null },
-      });
-    } else {
-      const created = await prisma.report.create({
-        data: {
-          userId: user.id,
-          type: 'NUM',
-          status: 'DRAFT',
-          input: inputJson,
-          numMode: 'COMBO',
-          numDob1: dobDate,
-          numName1: name,
-        },
-        select: { id: true },
-      });
-      reportId = created.id;
-    }
+    await prisma.report.update({
+      where: { id: reportId! },
+      data: {
+        status: 'ANALYZING',
+        input: inputJson,
+        errorCode: null,
+        errorText: null,
+      },
+    });
 
-    const prompt = buildPrompt({ dob, age, name, selectedList });
+    const prompt = buildPrompt({ dob, age, name, selectedList: wantedList });
     const ai = await callOpenAI({ apiKey, prompt });
 
     if (!ai.ok) {
-      if (reportId) {
-        await prisma.report.update({
-          where: { id: reportId },
-          data: { status: 'FAILED', errorCode: 'OPENAI_FAILED', errorText: String(ai.error || 'OPENAI_FAILED'), json: ai.raw ?? null },
-        });
-      }
-      return NextResponse.json({ ok: false, error: String(ai.error || 'OPENAI_FAILED') }, { status: 500 });
+      await prisma.report.update({
+        where: { id: reportId! },
+        data: {
+          status: 'FAILED',
+          errorCode: 'OPENAI_FAILED',
+          errorText: String(ai.error || 'OPENAI_FAILED'),
+          json: ai.raw ?? null,
+        },
+      });
+
+      return NextResponse.json(
+        { ok: false, error: String(ai.error || 'OPENAI_FAILED') },
+        { status: 500 }
+      );
     }
 
-    if (reportId) {
-      await prisma.report.update({
-        where: { id: reportId },
-        data: { status: 'READY', text: ai.text, json: ai.raw ?? null, errorCode: null, errorText: null },
-      });
-    }
+    await prisma.report.update({
+      where: { id: reportId! },
+      data: {
+        status: 'READY',
+        text: ai.text,
+        json: ai.raw ?? null,
+        errorCode: null,
+        errorText: null,
+      },
+    });
 
     return NextResponse.json({ ok: true, text: ai.text, cached: false });
   } catch (e: any) {
     const msg = e?.message ? String(e.message) : 'SERVER_ERROR';
+
     try {
       if (reportId) {
-        await prisma.report.update({ where: { id: reportId }, data: { status: 'FAILED', errorCode: 'SERVER_ERROR', errorText: msg } });
+        await prisma.report.update({
+          where: { id: reportId },
+          data: {
+            status: 'FAILED',
+            errorCode: 'SERVER_ERROR',
+            errorText: msg,
+          },
+        });
       }
     } catch {}
+
     return NextResponse.json({ ok: false, error: msg }, { status: 500 });
   }
 }
