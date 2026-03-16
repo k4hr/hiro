@@ -1,4 +1,3 @@
-/* path: app/api/astro-compat/analyze/route.ts */
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { prisma } from '@/lib/prisma';
@@ -98,11 +97,24 @@ function cleanText(v: any, max = 96): string {
   return String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
 }
 
+function cleanTime(v: any): string {
+  return String(v ?? '').replace(/\s+/g, '').trim().slice(0, 5);
+}
+
 function safeNum(v: any): number | null {
   if (v === null || v === undefined) return null;
   const n = Number(v);
   if (!Number.isFinite(n)) return null;
   return n;
+}
+
+function normalizeAccuracy(v: any): number | null {
+  const n = safeNum(v);
+  if (n === null) return null;
+  const x = Math.floor(n);
+  if (x < 1) return 1;
+  if (x > 3) return 3;
+  return x;
 }
 
 function optionTitle(k: OptionKey) {
@@ -124,16 +136,26 @@ function optionTitle(k: OptionKey) {
   }
 }
 
-/**
- * - пользователь может включать/выключать 5 пунктов
- * - итог всегда включён и всегда последний
- */
+function normalizeSelected(v: any): Record<OptionKey, boolean> {
+  const src = v && typeof v === 'object' ? v : {};
+  return {
+    ACOMPAT_LOVE: src.ACOMPAT_LOVE === true,
+    ACOMPAT_SEX: src.ACOMPAT_SEX === true,
+    ACOMPAT_MONEY: src.ACOMPAT_MONEY === true,
+    ACOMPAT_CONFLICT: src.ACOMPAT_CONFLICT === true,
+    ACOMPAT_FAMILY: src.ACOMPAT_FAMILY === true,
+    ACOMPAT_FORMULA: true,
+  };
+}
+
 function pickSelected(selected: Record<string, any> | null | undefined): OptionKey[] {
   const paid: OptionKey[] = ['ACOMPAT_LOVE', 'ACOMPAT_SEX', 'ACOMPAT_MONEY', 'ACOMPAT_CONFLICT', 'ACOMPAT_FAMILY'];
   const out: OptionKey[] = [];
 
   if (selected && typeof selected === 'object') {
-    for (const k of paid) if ((selected as any)[k] === true) out.push(k);
+    for (const k of paid) {
+      if ((selected as any)[k] === true) out.push(k);
+    }
   }
 
   out.push('ACOMPAT_FORMULA');
@@ -147,10 +169,10 @@ function computeAccuracyLevel(args: { birthPlace: string; birthTime: string; acc
     typeof args.accuracyLevel === 'number' && Number.isFinite(args.accuracyLevel) && args.accuracyLevel > 0
       ? Math.max(1, Math.min(3, Math.floor(args.accuracyLevel)))
       : hasPlace && hasTime
-      ? 3
-      : hasPlace
-      ? 2
-      : 1;
+        ? 3
+        : hasPlace
+          ? 2
+          : 1;
 
   return { lvl, hasPlace, hasTime };
 }
@@ -158,21 +180,23 @@ function computeAccuracyLevel(args: { birthPlace: string; birthTime: string; acc
 function accuracyPolicyText(acc: { lvl: number }) {
   if (acc.lvl >= 3) {
     return [
-      'ТОЧНОСТЬ 3/3: дата+место+время есть.',
-      'Можно использовать оси и дома как каркас совместимости (1–12, 1–7, 2–8, 4–10, 5–11, 6–12).',
-      'Но так как расчётов натала нет, запрещено утверждать конкретные градусы/аспекты/планеты-в-домах как факт.',
-      'Говори через темы: “ось 1–7”, “фокус 5 дома”, “напряжение 2–8”, “сценарий 4 дома”, и т.д.',
+      'ТОЧНОСТЬ 3/3: дата, место и время есть.',
+      'Можно использовать оси и дома как тематический каркас совместимости.',
+      'Запрещено выдавать конкретные градусы, аспекты и планеты-в-домах как установленный факт.',
+      'Говори через темы осей и домов: партнёрство, быт, деньги, близость, статус, семья.',
     ].join(' ');
   }
   if (acc.lvl === 2) {
     return [
-      'ТОЧНОСТЬ 2/3: дата+место есть, времени нет.',
-      'Асцендент/дома НЕ фиксируй как точные. Используй дома как универсальные темы, без привязки “у вас в 7 доме стоит…”',
+      'ТОЧНОСТЬ 2/3: есть дата и место, времени нет.',
+      'Асцендент и дома не фиксируй как точные.',
+      'Используй темы домов как универсальный каркас, а не как будто карта посчитана до минуты.',
     ].join(' ');
   }
   return [
-    'ТОЧНОСТЬ 1/3: только дата.',
-    'Без асцендента и домов как конкретики. Только домовые темы как универсальный каркас + психологические архетипы отношений.',
+    'ТОЧНОСТЬ 1/3: есть только дата.',
+    'Без конкретизации домов и асцендента как факта.',
+    'Используй универсальные темы совместимости и психологическую динамику пары.',
   ].join(' ');
 }
 
@@ -190,22 +214,26 @@ function buildPrompt(args: {
   const ageB = Number.isFinite(args.b.age as any) && args.b.age !== null ? String(args.b.age) : '';
 
   const weightLines = [
-    'ШКАЛА ОЦЕНКИ (для итогового процента):',
-    'Оцени 5 категорий по 0–20 баллов (целые числа): Любовь/близость, Секс/страсть, Деньги/ресурсы, Конфликты/примирение, Быт/семья.',
-    'Сумма даёт 0–100%.',
-    'Если какой-то пункт НЕ выбран пользователем, всё равно оцени его кратко (2–4 предложения) и дай баллы, но детально расписывай только выбранные пункты.',
+    'ШКАЛА ОЦЕНКИ:',
+    'Оцени 5 категорий по 0–20 баллов целыми числами: Любовь, Секс, Деньги, Конфликты, Быт.',
+    'Сумма даёт итог 0–100.',
+    'Даже если какой-то пункт не выбран, кратко оцени его и дай баллы, но подробно расписывай только выбранные пункты.',
   ].join('\n');
 
   return [
-    'Ты — топ-эксперт по астрологии и совместимости пары. Сделай максимально подробный разбор.',
+    'Ты — сильный эксперт по астрологии и совместимости пары.',
+    'Сделай подробный и структурный разбор.',
     '',
-    'КРИТИЧЕСКИЕ ПРАВИЛА ВЫВОДА:',
-    '1) Никаких символов Markdown: НЕ используй ##, **, *, _, `, >. Не используй списки с тире.',
-    '2) Не делай вступление/пролог. Сразу начинай с “1) …”.',
-    '3) Не задавай вопросов пользователю.',
-    '4) Пиши очень подробно, но без воды: плотные абзацы и чёткие формулировки.',
-    '5) Запрещено придумывать конкретные градусы/аспекты/планеты-в-домах как факт. Дома и оси используй как КАРКАС ТЕМ.',
-    '6) Никакой медицины/диагнозов/запугивания.',
+    'КРИТИЧЕСКИЕ ПРАВИЛА:',
+    '1) Не используй markdown.',
+    '2) Не используй символы ##, **, *, _, `, >.',
+    '3) Не используй списки с тире.',
+    '4) Не делай вступление. Начинай сразу с пункта 1).',
+    '5) Не задавай пользователю вопросов.',
+    '6) Не лей воду.',
+    '7) Не выдумывай конкретные градусы, аспекты и планеты-в-домах как установленный факт.',
+    '8) Используй дома и оси как тематический каркас совместимости.',
+    '9) Не пиши медицинские диагнозы и не запугивай.',
     '',
     'ДАННЫЕ:',
     `Человек A: дата=${args.a.dob}, возраст=${ageA}, место=${args.a.birthPlace || 'не указано'}, время=${args.a.birthTime || 'не указано'}`,
@@ -215,69 +243,62 @@ function buildPrompt(args: {
     '',
     weightLines,
     '',
-    'ФОРМАТ ОТВЕТА (СТРОГО):',
-    '1) Сначала строка: “Совместимость: NN%” (NN — целое число 0–100).',
-    '2) Затем строка: “Баллы: Любовь NN/20 · Секс NN/20 · Деньги NN/20 · Конфликты NN/20 · Быт NN/20”.',
-    '3) Затем строка: “Короткий вердикт:” и 3 строки-вердикта (каждая с новой строки).',
-    '4) Далее пункты 1), 2), 3)… строго в порядке, который дан в СПИСКЕ ПУНКТОВ НИЖЕ.',
+    'ФОРМАТ ОТВЕТА СТРОГО:',
+    '1) Первая строка: “1) Совместимость: NN%”.',
+    '2) Вторая строка: “Баллы: Любовь NN/20 · Секс NN/20 · Деньги NN/20 · Конфликты NN/20 · Быт NN/20”.',
+    '3) Затем строка: “Короткий вердикт:” и после неё 3 короткие строки.',
+    '4) Далее пункты 2), 3), 4) и так далее, строго по порядку выбранных пунктов.',
     '',
-    'ДЕТАЛЬНЫЙ ФОРМАТ ДЛЯ КАЖДОГО ВЫБРАННОГО ПУНКТА (КРОМЕ ФИНАЛЬНОГО):',
-    'А) Каркас домов и осей (совместимость):',
+    'ДЛЯ КАЖДОГО ВЫБРАННОГО ПУНКТА, КРОМЕ ФИНАЛЬНОГО, СТРУКТУРА СТРОГО ТАКАЯ:',
+    'А) Каркас домов и осей:',
     'Б) Что видно по паре:',
     'В) Значение:',
     'Г) Триггеры и риск-сценарии:',
     'Д) Практика (5 правил):',
     '',
-    'ПРАВИЛА К БЛОКАМ:',
-    'А) Каркас домов и осей: 10–14 строк. Формат строго:',
-    '“Ось 1–7: …”',
-    '“Ось 2–8: …”',
-    '“Ось 4–10: …”',
-    '“Ось 5–11: …”',
-    '“Ось 6–12: …”',
-    'и далее “Дом 4: …”, “Дом 5: …”, “Дом 7: …”, “Дом 8: …”, “Дом 10: …”, “Дом 2: …” (ключевые дома в совместимости).',
-    'Если точность 2/3 или 1/3 — в блоке А делай это как универсальные темы, без заявлений “у вас конкретно так”.',
+    'ТРЕБОВАНИЯ К БЛОКАМ:',
+    'А) Каркас домов и осей: 10–14 строк. Используй форматы “Ось 1–7: …”, “Ось 2–8: …”, “Ось 4–10: …”, “Ось 5–11: …”, “Ось 6–12: …”, затем темы домов 4, 5, 7, 8, 10, 2.',
+    'Б) Что видно по паре: 10–18 тезисов.',
+    'В) Значение: 10–18 выводов про динамику, доверие, власть, решения, эмоциональную близость и устойчивость.',
+    'Г) Триггеры и риск-сценарии: 5–8 сценариев в формате “когда X → вы делаете Y → итог Z”.',
+    'Д) Практика: ровно 5 правил, каждое с новой строки, каждое начинается с глагола действия.',
     '',
-    'Б) Что видно по паре: 10–18 тезисов. Обязательно покрыть:',
-    'романтика/тепло (5 дом), партнёрство/контракт (7 дом), секс/слияние/ревность/контроль (8 дом), деньги/ценность/траты (2 дом), общий дом/семья (4 дом), статус/цели (10 дом), дружба/команда (11 дом), рутина/быт (6 дом).',
+    'ФИНАЛЬНЫЙ ПУНКТ “Итог: формула пары (фраза + 7 правил)” ВСЕГДА ПОСЛЕДНИЙ И ИМЕЕТ СТРУКТУРУ:',
+    'А) “Эта пара про …”',
+    'Б) “Сильная сторона: …”',
+    'В) “Слабая сторона: …”',
+    'Г) “7 правил пары:” и затем ровно 7 правил с новой строки в формате 1) 2) 3).',
     '',
-    'В) Значение: 10–18 выводов про динамику: кто ведёт, как вы принимаете решения, как распределяется власть, как строится доверие, какие сценарии укрепляют/ломают связь.',
+    'СПЕЦИФИКА:',
+    'Любовь и близость: романтика, эмоциональная безопасность, стиль заботы, включённость в связь.',
+    'Секс и страсть: влечение, ревность, власть, границы, интенсивность, уязвимость.',
+    'Деньги и ресурсы: ценность, контроль, траты, стратегия, общий бюджет, риски.',
+    'Конфликты и примирение: триггеры, эскалация, способы деэскалации, восстановление контакта.',
+    'Быт и семья: дом, рутина, распределение нагрузки, устойчивость долгого формата.',
     '',
-    'Г) Триггеры и риск-сценарии: 5–8 сценариев строго в формате:',
-    '“когда X → вы делаете Y → итог Z”.',
-    'Из них обязательно: 2 про деньги/контроль (2–8), 2 про секс/границы (8), 2 про конфликты/эскалацию (7/Марс-Сатурн темы), 1 про быт (4/6), 1 про статус/цели (10).',
-    '',
-    'Д) Практика: ровно 5 правил. Каждое с новой строки и начинается глаголом действия:',
-    '“Договоритесь…”, “Введите правило…”, “Запретите…”, “Раз в неделю…”, “Если начинается спор — …”.',
-    '',
-    'ФИНАЛЬНЫЙ ПУНКТ (ИТОГ: формула пары) — всегда последний и имеет структуру:',
-    'А) “Эта пара про …” (1 предложение).',
-    'Б) “Сильная сторона: …” (1 предложение).',
-    'В) “Слабая сторона: …” (1 предложение).',
-    'Г) “7 правил пары:” и далее ровно 7 правил с новой строки, формат 1) 2) 3).',
-    '',
-    'СПЕЦИФИКА ПО ПУНКТАМ (делай максимально подробно):',
-    'Любовь и близость: 5/7 дом, эмоциональная безопасность, стиль заботы, что делает отношения “живыми”.',
-    'Секс и страсть: 8 дом, власть/ревность/слияние, границы, что разжигает и что гасит.',
-    'Деньги и ресурсы: 2/8 дом, деньги как ценность и как власть, стратегия, доверие, общий бюджет, долги/риски.',
-    'Конфликты и примирение: 7 дом + марсианско-сатурнианские темы давления/границ; деэскалация, правила ссоры, восстановление.',
-    'Быт и семья: 4/6 дом, распределение нагрузки, дом как система, “кто за что отвечает”, долгий формат.',
-    '',
-    'СПИСОК ПУНКТОВ ДЛЯ РАЗБОРА (ИМЕННО ИХ И ТОЛЬКО ИХ):',
+    'СПИСОК ПУНКТОВ ДЛЯ РАЗБОРА:',
     selectedTitles,
     '',
-    'Начинай ответ строго с “1) Совместимость: …%”.',
+    'Начинай строго с “1) Совместимость:”.',
   ].join('\n');
 }
 
 async function callOpenAI(args: { apiKey: string; prompt: string }) {
   const res = await fetch('https://api.openai.com/v1/responses', {
     method: 'POST',
-    headers: { Authorization: `Bearer ${args.apiKey}`, 'Content-Type': 'application/json' },
+    headers: {
+      Authorization: `Bearer ${args.apiKey}`,
+      'Content-Type': 'application/json',
+    },
     body: JSON.stringify({
       model: 'gpt-5.2',
       reasoning: { effort: 'high' },
-      input: [{ role: 'user', content: [{ type: 'input_text', text: args.prompt }] }],
+      input: [
+        {
+          role: 'user',
+          content: [{ type: 'input_text', text: args.prompt }],
+        },
+      ],
     }),
   });
 
@@ -296,7 +317,11 @@ async function callOpenAI(args: { apiKey: string; prompt: string }) {
   } else if (Array.isArray(j.output)) {
     for (const item of j.output) {
       if (item?.type === 'message' && Array.isArray(item.content)) {
-        for (const c of item.content) if (c?.type === 'output_text' && typeof c.text === 'string') outText += c.text;
+        for (const c of item.content) {
+          if (c?.type === 'output_text' && typeof c.text === 'string') {
+            outText += c.text;
+          }
+        }
       }
     }
     outText = outText.trim();
@@ -316,20 +341,44 @@ function sameSelectedList(a: any, b: any): boolean {
   }
 }
 
+function lc(v: any) {
+  return String(v ?? '').trim().toLowerCase();
+}
+
+function isPaidByPricing(pricingJson: any): boolean {
+  const candidates = [
+    pricingJson?.yookassa?.status,
+    pricingJson?.payment?.status,
+    pricingJson?.paymentStatus,
+    pricingJson?.status,
+  ]
+    .map((x) => lc(x))
+    .filter(Boolean);
+
+  return candidates.some((s) => ['succeeded', 'paid', 'success', 'captured', 'waiting_for_capture', 'authorized'].includes(s));
+}
+
 export async function POST(req: Request) {
   let reportId: string | null = null;
 
   try {
     const apiKey = envClean('OPENAI_API_KEY');
-    if (!apiKey) return NextResponse.json({ ok: false, error: 'NO_OPENAI_API_KEY' }, { status: 500 });
+    if (!apiKey) {
+      return NextResponse.json({ ok: false, error: 'NO_OPENAI_API_KEY' }, { status: 500 });
+    }
 
     const botToken = envClean('TELEGRAM_BOT_TOKEN');
-    if (!botToken) return NextResponse.json({ ok: false, error: 'NO_BOT_TOKEN' }, { status: 500 });
+    if (!botToken) {
+      return NextResponse.json({ ok: false, error: 'NO_BOT_TOKEN' }, { status: 500 });
+    }
 
     const body = (await req.json().catch(() => null)) as any;
-    if (!body) return NextResponse.json({ ok: false, error: 'BAD_JSON' }, { status: 400 });
+    if (!body) {
+      return NextResponse.json({ ok: false, error: 'BAD_JSON' }, { status: 400 });
+    }
 
     const initData = String(body.initData || '').trim();
+    reportId = String(body.reportId || '').trim() || null;
 
     const a = body.a && typeof body.a === 'object' ? body.a : null;
     const b = body.b && typeof body.b === 'object' ? body.b : null;
@@ -343,13 +392,13 @@ export async function POST(req: Request) {
     const place1 = cleanText(a?.birthPlace, 96);
     const place2 = cleanText(b?.birthPlace, 96);
 
-    const time1 = cleanText(a?.birthTime, 8);
-    const time2 = cleanText(b?.birthTime, 8);
+    const time1 = cleanTime(a?.birthTime);
+    const time2 = cleanTime(b?.birthTime);
 
-    const acc1 = safeNum(a?.accuracyLevel);
-    const acc2 = safeNum(b?.accuracyLevel);
+    const acc1 = normalizeAccuracy(a?.accuracyLevel);
+    const acc2 = normalizeAccuracy(b?.accuracyLevel);
 
-    const selectedFromReq = body.selected as Record<string, any> | undefined;
+    const selectedFromReq = normalizeSelected(body.selected);
 
     if (!initData) return NextResponse.json({ ok: false, error: 'NO_INIT_DATA' }, { status: 401 });
     if (!dob1 || !dob2) return NextResponse.json({ ok: false, error: 'NO_DOB' }, { status: 400 });
@@ -361,13 +410,81 @@ export async function POST(req: Request) {
     const v = verifyTelegramWebAppInitData(initData, botToken);
     if (!v.ok) return NextResponse.json({ ok: false, error: v.error }, { status: 401 });
 
-    const telegramId = v.user.id;
-    const user = await prisma.user.findUnique({ where: { telegramId }, select: { id: true } });
-    if (!user) return NextResponse.json({ ok: false, error: 'NO_USER' }, { status: 404 });
+    const user = await prisma.user.findUnique({
+      where: { telegramId: v.user.id },
+      select: { id: true },
+    });
+    if (!user) {
+      return NextResponse.json({ ok: false, error: 'NO_USER' }, { status: 404 });
+    }
 
-    // если пришёл selected — это новый заказ, кеш отдаём только если список совпадает
-    const selectedFixed = { ...(selectedFromReq ?? {}), ACOMPAT_FORMULA: true };
-    const wantedList = pickSelected(selectedFixed);
+    let currentReport: any = null;
+
+    if (reportId) {
+      currentReport = await prisma.report.findFirst({
+        where: {
+          id: reportId,
+          userId: user.id,
+          type: 'ASTRO',
+          astroMode: 'COMPAT',
+        },
+        select: {
+          id: true,
+          status: true,
+          text: true,
+          input: true,
+          pricingJson: true,
+          errorCode: true,
+          errorText: true,
+          json: true,
+        },
+      });
+
+      if (!currentReport) {
+        return NextResponse.json({ ok: false, error: 'REPORT_NOT_FOUND' }, { status: 404 });
+      }
+    } else {
+      currentReport = await prisma.report.findFirst({
+        where: {
+          userId: user.id,
+          type: 'ASTRO',
+          astroMode: 'COMPAT',
+          astroDob: d1,
+          astroCity: place1 || null,
+          astroTime: time1 || null,
+          astroDob2: d2,
+          astroCity2: place2 || null,
+          astroTime2: time2 || null,
+        },
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          status: true,
+          text: true,
+          input: true,
+          pricingJson: true,
+          errorCode: true,
+          errorText: true,
+          json: true,
+        },
+      });
+
+      if (!currentReport) {
+        return NextResponse.json({ ok: false, error: 'REPORT_NOT_FOUND' }, { status: 404 });
+      }
+
+      reportId = currentReport.id;
+    }
+
+    if (!isPaidByPricing(currentReport.pricingJson)) {
+      return NextResponse.json({ ok: false, error: 'PAYMENT_NOT_CONFIRMED' }, { status: 402 });
+    }
+
+    const wantedList = pickSelected(selectedFromReq);
+
+    if (String(currentReport.status || '').toUpperCase() === 'READY' && typeof currentReport.text === 'string' && currentReport.text.trim()) {
+      return NextResponse.json({ ok: true, text: currentReport.text, cached: true });
+    }
 
     const lastReady = await prisma.report.findFirst({
       where: {
@@ -383,145 +500,111 @@ export async function POST(req: Request) {
         status: 'READY',
       },
       orderBy: { createdAt: 'desc' },
-      select: { id: true, text: true, input: true },
+      select: {
+        id: true,
+        text: true,
+        input: true,
+        json: true,
+      },
     });
 
     if (lastReady?.text) {
       const prevList = (lastReady.input as any)?.selectedList;
-      if (!selectedFromReq || sameSelectedList(prevList, wantedList)) {
+      if (sameSelectedList(prevList, wantedList)) {
+        const inputJson = {
+          mode: 'ASTRO_COMPAT',
+          a: { dob: dob1, age: age1, birthPlace: place1, birthTime: time1, accuracyLevel: acc1 },
+          b: { dob: dob2, age: age2, birthPlace: place2, birthTime: time2, accuracyLevel: acc2 },
+          selected: selectedFromReq,
+          selectedList: wantedList,
+          analyzedAt: new Date().toISOString(),
+        };
+
+        await prisma.report.update({
+          where: { id: reportId! },
+          data: {
+            status: 'READY',
+            text: lastReady.text,
+            input: inputJson,
+            json: lastReady.json ?? null,
+            errorCode: null,
+            errorText: null,
+          },
+        });
+
         return NextResponse.json({ ok: true, text: lastReady.text, cached: true });
       }
     }
-
-    const lastAny = await prisma.report.findFirst({
-      where: {
-        userId: user.id,
-        type: 'ASTRO',
-        astroMode: 'COMPAT',
-        astroDob: d1,
-        astroCity: place1 || null,
-        astroTime: time1 || null,
-        astroDob2: d2,
-        astroCity2: place2 || null,
-        astroTime2: time2 || null,
-      },
-      orderBy: { createdAt: 'desc' },
-      select: { id: true, status: true, input: true, text: true },
-    });
-
-    const selectedObj =
-      selectedFromReq ??
-      ((lastAny?.input && typeof lastAny.input === 'object' && (lastAny.input as any).selected)
-        ? (lastAny.input as any).selected
-        : undefined);
-
-    const selectedObjFixed = { ...(selectedObj ?? {}), ACOMPAT_FORMULA: true };
-    const selectedList = pickSelected(selectedObjFixed);
-
-    const draft = await prisma.report.findFirst({
-      where: {
-        userId: user.id,
-        type: 'ASTRO',
-        astroMode: 'COMPAT',
-        astroDob: d1,
-        astroCity: place1 || null,
-        astroTime: time1 || null,
-        astroDob2: d2,
-        astroCity2: place2 || null,
-        astroTime2: time2 || null,
-        status: 'DRAFT',
-      },
-      orderBy: { createdAt: 'desc' },
-      select: { id: true },
-    });
 
     const inputJson = {
       mode: 'ASTRO_COMPAT',
       a: { dob: dob1, age: age1, birthPlace: place1, birthTime: time1, accuracyLevel: acc1 },
       b: { dob: dob2, age: age2, birthPlace: place2, birthTime: time2, accuracyLevel: acc2 },
-      selected: selectedObjFixed,
-      selectedList,
+      selected: selectedFromReq,
+      selectedList: wantedList,
       analyzedAt: new Date().toISOString(),
     };
 
-    if (draft) {
-      reportId = draft.id;
-      await prisma.report.update({
-        where: { id: reportId },
-        data: {
-          input: inputJson,
-          errorCode: null,
-          errorText: null,
-
-          type: 'ASTRO',
-          astroMode: 'COMPAT',
-
-          astroDob: d1,
-          astroCity: place1 || null,
-          astroTime: time1 || null,
-          astroAccuracyLevel: acc1 ?? null,
-
-          astroDob2: d2,
-          astroCity2: place2 || null,
-          astroTime2: time2 || null,
-          astroAccuracyLevel2: acc2 ?? null,
-        },
-      });
-    } else {
-      const created = await prisma.report.create({
-        data: {
-          userId: user.id,
-          type: 'ASTRO',
-          status: 'DRAFT',
-          input: inputJson,
-          astroMode: 'COMPAT',
-
-          astroDob: d1,
-          astroCity: place1 || null,
-          astroTime: time1 || null,
-          astroAccuracyLevel: acc1 ?? null,
-
-          astroDob2: d2,
-          astroCity2: place2 || null,
-          astroTime2: time2 || null,
-          astroAccuracyLevel2: acc2 ?? null,
-        },
-        select: { id: true },
-      });
-      reportId = created.id;
-    }
+    await prisma.report.update({
+      where: { id: reportId! },
+      data: {
+        status: 'ANALYZING',
+        input: inputJson,
+        errorCode: null,
+        errorText: null,
+      },
+    });
 
     const prompt = buildPrompt({
       a: { dob: dob1, age: age1, birthPlace: place1, birthTime: time1, accuracyLevel: acc1 },
       b: { dob: dob2, age: age2, birthPlace: place2, birthTime: time2, accuracyLevel: acc2 },
-      selectedList,
+      selectedList: wantedList,
     });
 
     const ai = await callOpenAI({ apiKey, prompt });
 
     if (!ai.ok) {
-      if (reportId) {
-        await prisma.report.update({
-          where: { id: reportId },
-          data: { status: 'FAILED', errorCode: 'OPENAI_FAILED', errorText: String(ai.error || 'OPENAI_FAILED'), json: ai.raw ?? null },
-        });
-      }
+      await prisma.report.update({
+        where: { id: reportId! },
+        data: {
+          status: 'FAILED',
+          errorCode: 'OPENAI_FAILED',
+          errorText: String(ai.error || 'OPENAI_FAILED'),
+          json: ai.raw ?? null,
+        },
+      });
+
       return NextResponse.json({ ok: false, error: String(ai.error || 'OPENAI_FAILED') }, { status: 500 });
     }
 
-    if (reportId) {
-      await prisma.report.update({
-        where: { id: reportId },
-        data: { status: 'READY', text: ai.text, json: ai.raw ?? null, errorCode: null, errorText: null },
-      });
-    }
+    await prisma.report.update({
+      where: { id: reportId! },
+      data: {
+        status: 'READY',
+        text: ai.text,
+        json: ai.raw ?? null,
+        errorCode: null,
+        errorText: null,
+      },
+    });
 
     return NextResponse.json({ ok: true, text: ai.text, cached: false });
   } catch (e: any) {
     const msg = e?.message ? String(e.message) : 'SERVER_ERROR';
+
     try {
-      if (reportId) await prisma.report.update({ where: { id: reportId }, data: { status: 'FAILED', errorCode: 'SERVER_ERROR', errorText: msg } });
+      if (reportId) {
+        await prisma.report.update({
+          where: { id: reportId },
+          data: {
+            status: 'FAILED',
+            errorCode: 'SERVER_ERROR',
+            errorText: msg,
+          },
+        });
+      }
     } catch {}
+
     return NextResponse.json({ ok: false, error: msg }, { status: 500 });
   }
 }
