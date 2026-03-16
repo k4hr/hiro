@@ -2,7 +2,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 
 function tg(): any | null {
   try {
@@ -37,7 +37,13 @@ function getInitDataNow(): string {
   return String(getCookie('tg_init_data') || '').trim();
 }
 
-type OptionKey = 'ASTRO_PERSON' | 'ASTRO_LOVE' | 'ASTRO_MONEY' | 'ASTRO_CAREER' | 'ASTRO_TIMING' | 'ASTRO_FORMULA';
+type OptionKey =
+  | 'ASTRO_PERSON'
+  | 'ASTRO_LOVE'
+  | 'ASTRO_MONEY'
+  | 'ASTRO_CAREER'
+  | 'ASTRO_TIMING'
+  | 'ASTRO_FORMULA';
 
 type Payload = {
   mode: 'ASTRO';
@@ -69,7 +75,7 @@ type GetResp =
       text: string;
       hasText: boolean;
       paid: boolean;
-      paymentStatus: string;
+      paymentStatus?: string | null;
     }
   | { ok: false; error: string; hint?: string };
 
@@ -77,10 +83,20 @@ function safeSelectedFromDb(input: any): Record<OptionKey, boolean> | null {
   try {
     const sel = input?.selected;
     if (!sel || typeof sel !== 'object') return null;
-    const keys: OptionKey[] = ['ASTRO_PERSON', 'ASTRO_LOVE', 'ASTRO_MONEY', 'ASTRO_CAREER', 'ASTRO_TIMING', 'ASTRO_FORMULA'];
+
+    const keys: OptionKey[] = [
+      'ASTRO_PERSON',
+      'ASTRO_LOVE',
+      'ASTRO_MONEY',
+      'ASTRO_CAREER',
+      'ASTRO_TIMING',
+      'ASTRO_FORMULA',
+    ];
+
     const out: any = {};
     for (const k of keys) out[k] = sel[k] === true;
     out.ASTRO_FORMULA = true;
+
     return out as Record<OptionKey, boolean>;
   } catch {
     return null;
@@ -168,27 +184,30 @@ function storageKeyAstro(dob: string, place: string, time: string) {
   return `birth_chart_${dob}_${place}_${time}`.slice(0, 140);
 }
 
+function normalizeStatus(v: any): string {
+  return String(v || '').trim().toUpperCase();
+}
+
 export default function ReportClient() {
-  const router = useRouter();
   const sp = useSearchParams();
 
+  const reportId = String(sp.get('reportId') || '').trim();
   const dob = String(sp.get('dob') || '').trim();
   const place = String(sp.get('place') || '').trim();
   const time = String(sp.get('time') || '').trim();
-  const reportId = String(sp.get('reportId') || '').trim();
 
   const [payload, setPayload] = useState<Payload | null>(null);
   const [dbReport, setDbReport] = useState<DbReport | null>(null);
   const [dbSelected, setDbSelected] = useState<Record<OptionKey, boolean> | null>(null);
 
   const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState<string>('');
-  const [text, setText] = useState<string>('');
-  const [info, setInfo] = useState<string>('');
-  const [paid, setPaid] = useState<boolean>(false);
-  const [paymentStatus, setPaymentStatus] = useState<string>('');
+  const [err, setErr] = useState('');
+  const [text, setText] = useState('');
+  const [info, setInfo] = useState('');
+  const [paid, setPaid] = useState(false);
+  const [paymentStatus, setPaymentStatus] = useState('');
 
-  const [toast, setToast] = useState<string>('');
+  const [toast, setToast] = useState('');
   const toastOn = Boolean(toast);
 
   const selectedForUi = payload?.selected ?? dbSelected;
@@ -215,7 +234,7 @@ export default function ReportClient() {
     if (pollRef.current) return;
     pollRef.current = setInterval(() => {
       fetchFromDb(true);
-    }, 2000);
+    }, 2500);
   };
 
   useEffect(() => {
@@ -235,12 +254,14 @@ export default function ReportClient() {
       const raw = sessionStorage.getItem(storageKeyAstro(dob, place, time));
       if (raw) {
         const j = JSON.parse(raw) as Payload;
-        if (j && j.mode === 'ASTRO' && j.dob === dob) setPayload(j);
+        if (j && j.mode === 'ASTRO' && j.dob === dob) {
+          setPayload(j);
+        }
       }
     } catch {}
 
-    analyzeStartedRef.current = false;
     fetchFromDb(false);
+    startPoll();
 
     return () => stopPoll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -290,18 +311,29 @@ export default function ReportClient() {
 
       const rep = j.report ?? null;
       setDbReport(rep);
-      setPaymentStatus(String(j.paymentStatus || ''));
 
       const selFromDb = rep?.input ? safeSelectedFromDb(rep.input) : null;
       if (selFromDb) setDbSelected(selFromDb);
 
       const isPaid = Boolean(j.paid === true);
-      setPaid(isPaid);
+      const repStatus = normalizeStatus(rep?.status);
+      const hasReadyText = Boolean(j.hasText && j.text);
 
-      if (j.hasText && j.text) {
+      setPaid(isPaid);
+      setPaymentStatus(String(j.paymentStatus || ''));
+
+      if (hasReadyText) {
         stopPoll();
         setText(String(j.text));
         setInfo('');
+        setErr('');
+        setLoading(false);
+        return;
+      }
+
+      if (repStatus === 'FAILED') {
+        stopPoll();
+        setErr(rep?.errorText || rep?.errorCode || 'ANALYZE_FAILED');
         setLoading(false);
         return;
       }
@@ -311,40 +343,41 @@ export default function ReportClient() {
       const accx = payload?.accuracyLevel ?? (rep?.input?.accuracyLevel ?? null);
       const bp = payload?.birthPlace ?? (rep?.input?.birthPlace ?? place);
       const bt = payload?.birthTime ?? (rep?.input?.birthTime ?? time);
-      const repStatus = String(rep?.status || '').toUpperCase();
+
+      if (!rep) {
+        setInfo('Отчёт ещё не найден.');
+        setLoading(false);
+        return;
+      }
 
       if (!isPaid) {
-        analyzeStartedRef.current = false;
         setText('');
         setInfo('Ожидаем подтверждение оплаты…');
-        startPoll();
         setLoading(false);
+        startPoll();
         return;
       }
 
-      if (repStatus === 'ANALYZING') {
-        setText('');
-        setInfo('Анализ уже идёт…');
-        startPoll();
+      if (repStatus === 'ANALYZING' || repStatus === 'PROCESSING') {
+        setInfo('Оплата подтверждена. Готовим разбор…');
         setLoading(false);
+        startPoll();
         return;
       }
-
-      stopPoll();
 
       if (!selectedNow) {
         setInfo('Данные для анализа не найдены.');
         setLoading(false);
+        startPoll();
         return;
       }
 
-      if (!analyzeStartedRef.current) {
+      if (!analyzeStartedRef.current && (repStatus === 'DRAFT' || !repStatus)) {
         analyzeStartedRef.current = true;
         setInfo('Оплата подтверждена. Запускаем анализ…');
         setLoading(false);
 
         runAnalyze({
-          reportId,
           dob,
           age: agex,
           birthPlace: bp,
@@ -355,7 +388,9 @@ export default function ReportClient() {
         return;
       }
 
+      setInfo('Оплата подтверждена. Ожидаем готовый отчёт…');
       setLoading(false);
+      startPoll();
     } catch (e: any) {
       if (!silent) {
         setErr(e?.message ? String(e.message) : 'NETWORK');
@@ -365,7 +400,6 @@ export default function ReportClient() {
   };
 
   const runAnalyze = async (p: {
-    reportId: string;
     dob: string;
     age: any;
     birthPlace: string;
@@ -390,7 +424,7 @@ export default function ReportClient() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           initData,
-          reportId: p.reportId,
+          reportId: dbReport?.id || reportId || undefined,
           dob: p.dob,
           age: p.age,
           birthPlace: p.birthPlace,
@@ -401,65 +435,40 @@ export default function ReportClient() {
       });
 
       const j = (await res.json().catch(() => null)) as any;
-      if (!res.ok || !j || j.ok !== true || typeof j.text !== 'string') {
+
+      if (!res.ok || !j || j.ok !== true) {
         setErr(j?.error ? String(j.error) : `ANALYZE_FAILED(${res.status})`);
         setLoading(false);
+        startPoll();
         return;
       }
 
-      stopPoll();
-      setText(String(j.text));
-      setInfo('');
-      setLoading(false);
+      if (typeof j.text === 'string' && j.text.trim()) {
+        setText(String(j.text));
+        setInfo('');
+        setLoading(false);
+        stopPoll();
+        return;
+      }
 
+      setInfo('Анализ запущен. Ожидаем готовый отчёт…');
+      setLoading(false);
+      startPoll();
       fetchFromDb(true);
     } catch (e: any) {
       setErr(e?.message ? String(e.message) : 'NETWORK');
       setLoading(false);
+      startPoll();
     }
-  };
-
-  const forceAnalyze = () => {
-    haptic('medium');
-
-    const sel = payload?.selected ?? dbSelected;
-    const repInput = dbReport?.input ?? null;
-
-    const agex = payload?.age ?? (repInput?.age ?? null);
-    const accx = payload?.accuracyLevel ?? (repInput?.accuracyLevel ?? null);
-    const bp = payload?.birthPlace ?? (repInput?.birthPlace ?? place);
-    const bt = payload?.birthTime ?? (repInput?.birthTime ?? time);
-
-    if (!dob) {
-      setErr('NO_DOB');
-      return;
-    }
-    if (!sel) {
-      setErr('NO_SELECTED_IN_DB');
-      setInfo('Нет сохранённых пунктов. Вернись назад и нажми “Продолжить” ещё раз.');
-      return;
-    }
-    if (!paid) {
-      setErr('PAYMENT_NOT_CONFIRMED');
-      setInfo('Сначала должна подтвердиться оплата.');
-      return;
-    }
-
-    analyzeStartedRef.current = true;
-    runAnalyze({
-      reportId: reportId || String(dbReport?.id || ''),
-      dob,
-      age: agex,
-      birthPlace: bp,
-      birthTime: bt,
-      accuracyLevel: accx,
-      selected: sel,
-    });
   };
 
   const goBack = () => {
     haptic('light');
-    router.push('/birth-chart');
+    try {
+      window.history.back();
+      return;
+    } catch {}
+    window.location.href = '/birth-chart';
   };
 
   const onCopy = async () => {
@@ -468,14 +477,25 @@ export default function ReportClient() {
     setToast(ok ? 'Скопировано' : 'Не удалось скопировать');
   };
 
-  const showMeta = Boolean(dob || place || time || dbSelected || payload || dbReport);
+  const showMeta = Boolean(dob || place || time || dbSelected || payload);
   const ready = Boolean(text) && !loading && !err;
+  const repStatus = normalizeStatus(dbReport?.status);
+
+  const subtitle = ready
+    ? 'ОТЧЁТ ГОТОВ'
+    : loading
+      ? 'ПРОХОДИТ АНАЛИЗ...'
+      : !paid
+        ? 'ОЖИДАЕМ ОПЛАТУ...'
+        : repStatus === 'ANALYZING' || repStatus === 'PROCESSING'
+          ? 'ГОТОВИМ РАЗБОР...'
+          : 'ОЖИДАЕМ ОТЧЁТ...';
 
   return (
     <main className="p">
       <header className="hero">
         <div className="title">РАЗБОР</div>
-        <div className="subtitle">{ready ? 'ОТЧЁТ ГОТОВ' : loading ? 'ПРОХОДИТ АНАЛИЗ...' : paid ? 'ОЖИДАЕМ ОТЧЁТ...' : 'ОЖИДАЕМ ОПЛАТУ...'}</div>
+        <div className="subtitle">{subtitle}</div>
       </header>
 
       {toastOn ? (
@@ -488,7 +508,7 @@ export default function ReportClient() {
         <section className="card">
           <div className="label">Ошибка</div>
           <div className="warn">{err}</div>
-          <div className="row">
+          <div className="actionsGrid">
             <button type="button" className="btn" onClick={() => fetchFromDb(false)} disabled={loading}>
               Обновить
             </button>
@@ -508,12 +528,12 @@ export default function ReportClient() {
           </div>
           {paymentStatus ? (
             <div className="hint">
-              Payment status: <b>{paymentStatus}</b>
+              Статус платежа: <b>{paymentStatus}</b>
             </div>
           ) : null}
-          {dbReport?.status ? (
+          {repStatus ? (
             <div className="hint">
-              Report status: <b>{dbReport.status}</b>
+              Статус отчёта: <b>{repStatus}</b>
             </div>
           ) : null}
         </section>
@@ -523,11 +543,6 @@ export default function ReportClient() {
         <section className="card">
           <div className="label">Данные</div>
           <div className="meta">
-            {reportId || dbReport?.id ? (
-              <div className="metaLine">
-                <b>ReportId:</b> {reportId || dbReport?.id || '—'}
-              </div>
-            ) : null}
             <div className="metaLine">
               <b>Дата:</b> {dob || '—'}
             </div>
@@ -557,7 +572,7 @@ export default function ReportClient() {
 
         {text ? <pre className="out">{text}</pre> : null}
 
-        <div className="row">
+        <div className="actionsGrid">
           <button type="button" className="btn2" onClick={onCopy} disabled={!ready}>
             Скопировать
           </button>
@@ -566,18 +581,9 @@ export default function ReportClient() {
           </button>
         </div>
 
-        <div className="row">
+        <div className="actionsSingle">
           <button type="button" className="btn" onClick={() => fetchFromDb(false)} disabled={loading}>
-            Обновить из БД
-          </button>
-          <button type="button" className="btn2" onClick={goBack}>
-            Назад
-          </button>
-        </div>
-
-        <div className="row">
-          <button type="button" className="btn3" onClick={forceAnalyze} disabled={loading || !paid}>
-            Пересоздать отчёт (OpenAI)
+            Обновить
           </button>
         </div>
       </section>
@@ -597,6 +603,7 @@ export default function ReportClient() {
           align-items: center;
           gap: 12px;
         }
+
         .p > * {
           width: 100%;
           max-width: 520px;
@@ -714,22 +721,31 @@ export default function ReportClient() {
           word-break: break-word;
         }
 
-        .row {
-          display: flex;
+        .actionsGrid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 10px;
+          margin-top: 4px;
+        }
+
+        .actionsSingle {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr);
           gap: 10px;
           margin-top: 4px;
         }
 
         .btn,
-        .btn2,
-        .btn3 {
-          flex: 1;
+        .btn2 {
+          width: 100%;
+          min-width: 0;
           border-radius: 999px;
           padding: 12px 14px;
           font-size: 14px;
           font-weight: 950;
           cursor: pointer;
           -webkit-tap-highlight-color: transparent;
+          text-align: center;
         }
 
         .btn {
@@ -740,8 +756,7 @@ export default function ReportClient() {
         }
 
         .btn:disabled,
-        .btn2:disabled,
-        .btn3:disabled {
+        .btn2:disabled {
           opacity: 0.55;
           cursor: not-allowed;
           box-shadow: none;
@@ -753,15 +768,8 @@ export default function ReportClient() {
           background: rgba(255, 255, 255, 0.03);
         }
 
-        .btn3 {
-          border: 1px solid rgba(233, 236, 255, 0.14);
-          color: rgba(233, 236, 255, 0.92);
-          background: rgba(255, 255, 255, 0.02);
-        }
-
         .btn:active,
-        .btn2:active,
-        .btn3:active {
+        .btn2:active {
           transform: scale(0.99);
           opacity: 0.92;
         }
@@ -790,6 +798,12 @@ export default function ReportClient() {
         .backBtn:active {
           transform: scale(0.99);
           opacity: 0.92;
+        }
+
+        @media (max-width: 420px) {
+          .actionsGrid {
+            grid-template-columns: 1fr;
+          }
         }
       `}</style>
     </main>
