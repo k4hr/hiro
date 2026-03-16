@@ -1,4 +1,3 @@
-/* path: app/api/combo/submit/route.ts */
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { prisma } from '@/lib/prisma';
@@ -12,6 +11,28 @@ type TgUser = {
   first_name: string | null;
   last_name: string | null;
 };
+
+type OptionKey =
+  | 'COMBO_RESONANCE'
+  | 'COMBO_STRENGTHS'
+  | 'COMBO_WEAKNESSES'
+  | 'COMBO_MONEY'
+  | 'COMBO_CAREER'
+  | 'COMBO_COMM'
+  | 'COMBO_ENERGY'
+  | 'COMBO_LESSON'
+  | 'SUMMARY';
+
+const PAID_KEYS: OptionKey[] = [
+  'COMBO_RESONANCE',
+  'COMBO_STRENGTHS',
+  'COMBO_WEAKNESSES',
+  'COMBO_MONEY',
+  'COMBO_CAREER',
+  'COMBO_COMM',
+  'COMBO_ENERGY',
+  'COMBO_LESSON',
+];
 
 function envClean(name: string) {
   return String(process.env[name] ?? '').replace(/[\r\n]/g, '').trim();
@@ -80,6 +101,14 @@ function verifyTelegramWebAppInitData(initData: string, botToken: string, maxAge
 function parseDobToUtcDate(dob: string): Date | null {
   if (!/^\d{2}\.\d{2}\.\d{4}$/.test(dob)) return null;
   const [dd, mm, yyyy] = dob.split('.');
+  const y = Number(yyyy);
+  const m = Number(mm);
+  const d = Number(dd);
+
+  if (!y || !m || !d) return null;
+  if (y < 1900 || y > 2100) return null;
+  if (m < 1 || m > 12) return null;
+
   const iso = `${yyyy}-${mm}-${dd}T00:00:00.000Z`;
   const dt = new Date(iso);
   if (!Number.isFinite(dt.getTime())) return null;
@@ -97,14 +126,31 @@ function safeNum(v: any): number | null {
   return n;
 }
 
-function countSelectedTrue(selected: any): number {
-  if (!selected || typeof selected !== 'object') return 0;
-  let c = 0;
-  for (const [k, v] of Object.entries(selected)) {
-    if (String(k).toUpperCase().includes('FORMULA')) continue;
-    if (v === true) c += 1;
-  }
-  return c;
+function normalizeSelected(v: any): Record<OptionKey, boolean> {
+  const src = v && typeof v === 'object' ? v : {};
+  return {
+    COMBO_RESONANCE: src.COMBO_RESONANCE === true,
+    COMBO_STRENGTHS: src.COMBO_STRENGTHS === true,
+    COMBO_WEAKNESSES: src.COMBO_WEAKNESSES === true,
+    COMBO_MONEY: src.COMBO_MONEY === true,
+    COMBO_CAREER: src.COMBO_CAREER === true,
+    COMBO_COMM: src.COMBO_COMM === true,
+    COMBO_ENERGY: src.COMBO_ENERGY === true,
+    COMBO_LESSON: src.COMBO_LESSON === true,
+    SUMMARY: true,
+  };
+}
+
+function countPaidSelected(selected: Record<OptionKey, boolean>) {
+  return PAID_KEYS.filter((k) => selected[k] === true).length;
+}
+
+function lc(v: any) {
+  return String(v ?? '').trim().toLowerCase();
+}
+
+function isPaidPricing(pricingJson: any): boolean {
+  return lc(pricingJson?.yookassa?.status) === 'succeeded';
 }
 
 export async function POST(req: Request) {
@@ -120,7 +166,11 @@ export async function POST(req: Request) {
     const name = cleanName(body.name);
 
     const age = safeNum(body.age);
-    const selected = body.selected && typeof body.selected === 'object' ? body.selected : {};
+    const selected = normalizeSelected(body.selected);
+
+    const clientPriceRub = safeNum(body.priceRub);
+    const clientSummaryPriceRub = safeNum(body.summaryPriceRub);
+    const clientTotalRub = safeNum(body.totalRub);
 
     if (!initData) return NextResponse.json({ ok: false, error: 'NO_INIT_DATA' }, { status: 401 });
     if (!dob) return NextResponse.json({ ok: false, error: 'NO_DOB' }, { status: 400 });
@@ -149,11 +199,30 @@ export async function POST(req: Request) {
       select: { id: true },
     });
 
-    const modulePriceRub = 39;
-    const summaryPriceRub = 49;
+    const priceRub =
+      Number.isFinite(clientPriceRub as number) && (clientPriceRub as number) > 0 ? Number(clientPriceRub) : 39;
 
-    const paidCount = countSelectedTrue(selected);
-    const totalRub = paidCount * modulePriceRub + summaryPriceRub;
+    const summaryPriceRub =
+      Number.isFinite(clientSummaryPriceRub as number) && (clientSummaryPriceRub as number) > 0
+        ? Number(clientSummaryPriceRub)
+        : 49;
+
+    const paidCount = countPaidSelected(selected);
+    const totalRub = paidCount * priceRub + summaryPriceRub;
+
+    if (!Number.isFinite(totalRub) || totalRub <= 0) {
+      return NextResponse.json({ ok: false, error: 'BAD_TOTAL_RUB' }, { status: 400 });
+    }
+
+    if (clientTotalRub !== null && Number(clientTotalRub) !== totalRub) {
+      console.log('[COMBO_SUBMIT_TOTAL_MISMATCH]', {
+        clientTotalRub,
+        serverTotalRub: totalRub,
+        paidCount,
+        priceRub,
+        summaryPriceRub,
+      });
+    }
 
     const inputJson = {
       mode: 'COMBO',
@@ -162,56 +231,95 @@ export async function POST(req: Request) {
       age,
       selected,
       clientPricing: {
-        totalRub: safeNum(body.totalRub),
-        priceRub: safeNum(body.priceRub),
-        summaryPriceRub: safeNum(body.summaryPriceRub),
+        totalRub: clientTotalRub,
+        priceRub: clientPriceRub,
+        summaryPriceRub: clientSummaryPriceRub,
+      },
+      serverPricing: {
+        paidCount,
+        priceRub,
+        summaryPriceRub,
+        totalRub,
       },
       savedAt: new Date().toISOString(),
     };
 
-    const pricingJson = {
-      kind: 'NUM_COMBO',
-      modulePriceRub,
-      summaryPriceRub,
-      paidCount,
-      totalRub,
-      selected,
-    };
-
-    const draft = await prisma.report.findFirst({
+    const existing = await prisma.report.findFirst({
       where: {
         userId: user.id,
         type: 'NUM',
-        status: 'DRAFT',
         numMode: 'COMBO',
         numDob1: dobDate,
         numName1: name,
       },
       orderBy: { createdAt: 'desc' },
-      select: { id: true },
+      select: {
+        id: true,
+        status: true,
+        pricingJson: true,
+      },
     });
 
-    if (draft) {
-      await prisma.report.update({
-        where: { id: draft.id },
+    if (existing && isPaidPricing(existing.pricingJson)) {
+      return NextResponse.json({
+        ok: true,
+        reportId: existing.id,
+        totalRub,
+        paidCount,
+        alreadyPaid: true,
+      });
+    }
+
+    if (existing) {
+      const prev =
+        existing.pricingJson && typeof existing.pricingJson === 'object'
+          ? (existing.pricingJson as any)
+          : {};
+
+      const pricingJson = {
+        ...prev,
+        kind: 'NUM_COMBO',
+        totalRub,
+        priceRub,
+        summaryPriceRub,
+        paidCount,
+        selected,
+      };
+
+      const updated = await prisma.report.update({
+        where: { id: existing.id },
         data: {
           input: inputJson,
-          type: 'NUM',
           numMode: 'COMBO',
           numDob1: dobDate,
           numName1: name,
           numDob2: null,
           numName2: null,
-          priceRub: modulePriceRub,
+          priceRub,
           totalRub,
           pricingJson,
           errorCode: null,
           errorText: null,
         },
+        select: { id: true },
       });
 
-      return NextResponse.json({ ok: true, reportId: draft.id, totalRub });
+      return NextResponse.json({
+        ok: true,
+        reportId: updated.id,
+        totalRub,
+        paidCount,
+      });
     }
+
+    const pricingJson = {
+      kind: 'NUM_COMBO',
+      totalRub,
+      priceRub,
+      summaryPriceRub,
+      paidCount,
+      selected,
+    };
 
     const created = await prisma.report.create({
       data: {
@@ -222,16 +330,24 @@ export async function POST(req: Request) {
         numMode: 'COMBO',
         numDob1: dobDate,
         numName1: name,
-        priceRub: modulePriceRub,
+        priceRub,
         totalRub,
         pricingJson,
       },
       select: { id: true },
     });
 
-    return NextResponse.json({ ok: true, reportId: created.id, totalRub });
+    return NextResponse.json({
+      ok: true,
+      reportId: created.id,
+      totalRub,
+      paidCount,
+    });
   } catch (e: any) {
-    console.error(e);
-    return NextResponse.json({ ok: false, error: 'SUBMIT_FAILED', hint: String(e?.message || 'See server logs') }, { status: 500 });
+    console.error('[COMBO_SUBMIT_ERROR]', e);
+    return NextResponse.json(
+      { ok: false, error: 'SUBMIT_FAILED', hint: String(e?.message || 'See server logs') },
+      { status: 500 }
+    );
   }
 }
