@@ -1,4 +1,3 @@
-/* path: app/astro-compat/report/ReportClient.tsx */
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -72,8 +71,13 @@ type GetResp =
       text: string;
       hasText: boolean;
       paid: boolean;
+      paymentStatus?: string | null;
     }
-  | { ok: false; error: string; hint?: string };
+  | {
+      ok: false;
+      error: string;
+      hint?: string;
+    };
 
 function safeSelectedFromDb(input: any): Record<OptionKey, boolean> | null {
   try {
@@ -102,7 +106,7 @@ function optionTitle(k: OptionKey) {
     case 'ACOMPAT_FAMILY':
       return 'Быт и семья';
     case 'ACOMPAT_FORMULA':
-      return 'Итог: формула пары (фраза + 7 правил)';
+      return 'Итог: формула пары';
     default:
       return String(k);
   }
@@ -111,7 +115,6 @@ function optionTitle(k: OptionKey) {
 function buildShareUrl(): string {
   const envUrl = (process.env.NEXT_PUBLIC_TMA_SHARE_URL || '').trim();
   if (envUrl) return envUrl;
-
   try {
     const u = new URL(window.location.href);
     return `${u.origin}/astro-compat`;
@@ -122,7 +125,6 @@ function buildShareUrl(): string {
 
 function openShare() {
   haptic('medium');
-
   const url = buildShareUrl();
   const text = 'Смотри разбор “Астро-совместимость” в мини-приложении';
   const shareLink = `https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`;
@@ -166,12 +168,21 @@ async function copyToClipboard(text: string): Promise<boolean> {
   }
 }
 
-function storageKeyAstroCompat(a: { dob: string; place: string; time: string }, b: { dob: string; place: string; time: string }) {
+function storageKeyAstroCompat(
+  a: { dob: string; place: string; time: string },
+  b: { dob: string; place: string; time: string }
+) {
   return `astro_compat_${a.dob}_${a.place}_${a.time}_${b.dob}_${b.place}_${b.time}`.slice(0, 140);
+}
+
+function normalizeStatus(v: any): string {
+  return String(v || '').trim().toUpperCase();
 }
 
 export default function ReportClient() {
   const sp = useSearchParams();
+
+  const reportId = String(sp.get('reportId') || '').trim();
 
   const dob1 = String(sp.get('dob1') || '').trim();
   const place1 = String(sp.get('place1') || '').trim();
@@ -191,12 +202,13 @@ export default function ReportClient() {
   const [dbSelected, setDbSelected] = useState<Record<OptionKey, boolean> | null>(null);
 
   const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState<string>('');
-  const [text, setText] = useState<string>('');
-  const [info, setInfo] = useState<string>('');
-  const [paid, setPaid] = useState<boolean>(false);
+  const [err, setErr] = useState('');
+  const [text, setText] = useState('');
+  const [info, setInfo] = useState('');
+  const [paid, setPaid] = useState(false);
+  const [paymentStatus, setPaymentStatus] = useState('');
 
-  const [toast, setToast] = useState<string>('');
+  const [toast, setToast] = useState('');
   const toastOn = Boolean(toast);
 
   const selectedForUi = payload?.selected ?? dbSelected;
@@ -208,6 +220,23 @@ export default function ReportClient() {
       .filter(([, v]) => v)
       .map(([k]) => optionTitle(k));
   }, [selectedForUi]);
+
+  const analyzeStartedRef = useRef(false);
+  const pollRef = useRef<any>(null);
+
+  const stopPoll = () => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  };
+
+  const startPoll = () => {
+    if (pollRef.current) return;
+    pollRef.current = setInterval(() => {
+      fetchFromDb(true);
+    }, 2500);
+  };
 
   useEffect(() => {
     try {
@@ -226,40 +255,33 @@ export default function ReportClient() {
       const raw = sessionStorage.getItem(sk);
       if (raw) {
         const j = JSON.parse(raw) as Payload;
-        if (j && j.mode === 'ASTRO_COMPAT') setPayload(j);
+        if (
+          j &&
+          j.mode === 'ASTRO_COMPAT' &&
+          j.a?.dob === dob1 &&
+          j.b?.dob === dob2 &&
+          String(j.a?.birthPlace || '') === place1 &&
+          String(j.a?.birthTime || '') === time1 &&
+          String(j.b?.birthPlace || '') === place2 &&
+          String(j.b?.birthTime || '') === time2
+        ) {
+          setPayload(j);
+        }
       }
     } catch {}
 
-    fetchFromDb();
+    fetchFromDb(false);
+    startPoll();
+
+    return () => stopPoll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dob1, place1, time1, dob2, place2, time2, sk]);
+  }, [dob1, place1, time1, dob2, place2, time2, reportId, sk]);
 
   useEffect(() => {
     if (!toastOn) return;
     const t = setTimeout(() => setToast(''), 1800);
     return () => clearTimeout(t);
   }, [toastOn]);
-
-  const analyzeStartedRef = useRef(false);
-
-  const pollRef = useRef<any>(null);
-  const stopPoll = () => {
-    if (pollRef.current) {
-      clearInterval(pollRef.current);
-      pollRef.current = null;
-    }
-  };
-  const startPoll = () => {
-    if (pollRef.current) return;
-    pollRef.current = setInterval(() => {
-      fetchFromDb(true);
-    }, 2000);
-  };
-
-  useEffect(() => {
-    return () => stopPoll();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   const fetchFromDb = async (silent = false) => {
     const initData = getInitDataNow();
@@ -280,13 +302,13 @@ export default function ReportClient() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           initData,
+          reportId,
           a: { dob: dob1, birthPlace: place1, birthTime: time1 },
           b: { dob: dob2, birthPlace: place2, birthTime: time2 },
         }),
       });
 
       const j = (await res.json().catch(() => null)) as GetResp | null;
-
       if (!res.ok || !j || (j as any).ok !== true) {
         if (!silent) {
           setErr((j as any)?.error ? String((j as any).error) : `GET_FAILED(${res.status})`);
@@ -295,24 +317,36 @@ export default function ReportClient() {
         return;
       }
 
-      const rep = (j as any).report ?? null;
+      const rep = j.report ?? null;
       setDbReport(rep);
 
       const selFromDb = rep?.input ? safeSelectedFromDb(rep.input) : null;
       if (selFromDb) setDbSelected(selFromDb);
 
-      const isPaid = Boolean((j as any).paid === true);
-      setPaid(isPaid);
+      const isPaid = Boolean(j.paid === true);
+      const repStatus = normalizeStatus(rep?.status);
+      const hasReadyText = Boolean(j.hasText && j.text);
 
-      if ((j as any).hasText && (j as any).text) {
+      setPaid(isPaid);
+      setPaymentStatus(String(j.paymentStatus || ''));
+
+      if (hasReadyText) {
         stopPoll();
-        setText(String((j as any).text));
+        setText(String(j.text));
         setInfo('');
+        setErr('');
         setLoading(false);
         return;
       }
 
-      const s = payload?.selected ?? selFromDb;
+      if (repStatus === 'FAILED') {
+        stopPoll();
+        setErr(rep?.errorText || rep?.errorCode || 'ANALYZE_FAILED');
+        setLoading(false);
+        return;
+      }
+
+      const selectedNow = payload?.selected ?? selFromDb;
 
       const aAge = payload?.a?.age ?? (rep?.input?.a?.age ?? null);
       const bAge = payload?.b?.age ?? (rep?.input?.b?.age ?? null);
@@ -320,42 +354,56 @@ export default function ReportClient() {
       const aAcc = payload?.a?.accuracyLevel ?? (rep?.input?.a?.accuracyLevel ?? null);
       const bAcc = payload?.b?.accuracyLevel ?? (rep?.input?.b?.accuracyLevel ?? null);
 
-      const aPlace = payload?.a?.birthPlace ?? place1;
-      const aTime = payload?.a?.birthTime ?? time1;
-      const bPlace = payload?.b?.birthPlace ?? place2;
-      const bTime = payload?.b?.birthTime ?? time2;
+      const aPlace = payload?.a?.birthPlace ?? (rep?.input?.a?.birthPlace ?? place1);
+      const aTime = payload?.a?.birthTime ?? (rep?.input?.a?.birthTime ?? time1);
+      const bPlace = payload?.b?.birthPlace ?? (rep?.input?.b?.birthPlace ?? place2);
+      const bTime = payload?.b?.birthTime ?? (rep?.input?.b?.birthTime ?? time2);
+
+      if (!rep) {
+        setInfo('Отчёт ещё не найден.');
+        setLoading(false);
+        return;
+      }
 
       if (!isPaid) {
-        analyzeStartedRef.current = false;
         setText('');
         setInfo('Ожидаем подтверждение оплаты…');
-        startPoll();
         setLoading(false);
+        startPoll();
         return;
       }
 
-      stopPoll();
+      if (repStatus === 'ANALYZING' || repStatus === 'PROCESSING') {
+        setInfo('Оплата подтверждена. Готовим разбор…');
+        setLoading(false);
+        startPoll();
+        return;
+      }
 
-      if (!s) {
+      if (!selectedNow) {
         setInfo('Данные для анализа не найдены.');
         setLoading(false);
+        startPoll();
         return;
       }
 
-      if (!analyzeStartedRef.current) {
+      if (!analyzeStartedRef.current && (repStatus === 'DRAFT' || !repStatus)) {
         analyzeStartedRef.current = true;
         setInfo('Оплата подтверждена. Запускаем анализ…');
         setLoading(false);
 
         runAnalyze({
+          reportId: rep.id || reportId || undefined,
           a: { dob: dob1, age: aAge, birthPlace: aPlace, birthTime: aTime, accuracyLevel: aAcc },
           b: { dob: dob2, age: bAge, birthPlace: bPlace, birthTime: bTime, accuracyLevel: bAcc },
-          selected: s,
+          selected: selectedNow,
         });
         return;
       }
 
+      setInfo('Оплата подтверждена. Ожидаем готовый отчёт…');
       setLoading(false);
+      startPoll();
     } catch (e: any) {
       if (!silent) {
         setErr(e?.message ? String(e.message) : 'NETWORK');
@@ -365,6 +413,7 @@ export default function ReportClient() {
   };
 
   const runAnalyze = async (p: {
+    reportId?: string;
     a: { dob: string; age: any; birthPlace: string; birthTime: string; accuracyLevel: any };
     b: { dob: string; age: any; birthPlace: string; birthTime: string; accuracyLevel: any };
     selected: Record<OptionKey, boolean>;
@@ -386,6 +435,7 @@ export default function ReportClient() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           initData,
+          reportId: p.reportId,
           a: p.a,
           b: p.b,
           selected: p.selected,
@@ -393,55 +443,30 @@ export default function ReportClient() {
       });
 
       const j = (await res.json().catch(() => null)) as any;
-      if (!res.ok || !j || j.ok !== true || typeof j.text !== 'string') {
+      if (!res.ok || !j || j.ok !== true) {
         setErr(j?.error ? String(j.error) : `ANALYZE_FAILED(${res.status})`);
         setLoading(false);
+        startPoll();
         return;
       }
 
-      setText(String(j.text));
-      setInfo('');
-      setLoading(false);
+      if (typeof j.text === 'string' && j.text.trim()) {
+        setText(String(j.text));
+        setInfo('');
+        setLoading(false);
+        stopPoll();
+        return;
+      }
 
+      setInfo('Анализ запущен. Ожидаем готовый отчёт…');
+      setLoading(false);
+      startPoll();
       fetchFromDb(true);
     } catch (e: any) {
       setErr(e?.message ? String(e.message) : 'NETWORK');
       setLoading(false);
+      startPoll();
     }
-  };
-
-  const forceAnalyze = () => {
-    haptic('medium');
-
-    const sel = payload?.selected ?? dbSelected;
-    const repInput = dbReport?.input ?? null;
-
-    const aAge = payload?.a?.age ?? (repInput?.a?.age ?? null);
-    const bAge = payload?.b?.age ?? (repInput?.b?.age ?? null);
-
-    const aAcc = payload?.a?.accuracyLevel ?? (repInput?.a?.accuracyLevel ?? null);
-    const bAcc = payload?.b?.accuracyLevel ?? (repInput?.b?.accuracyLevel ?? null);
-
-    const aPlace = payload?.a?.birthPlace ?? (repInput?.a?.birthPlace ?? place1);
-    const aTime = payload?.a?.birthTime ?? (repInput?.a?.birthTime ?? time1);
-    const bPlace = payload?.b?.birthPlace ?? (repInput?.b?.birthPlace ?? place2);
-    const bTime = payload?.b?.birthTime ?? (repInput?.b?.birthTime ?? time2);
-
-    if (!dob1 || !dob2) {
-      setErr('NO_DOB');
-      return;
-    }
-    if (!sel) {
-      setErr('NO_SELECTED_IN_DB');
-      setInfo('Нет сохранённых пунктов. Вернись назад и нажми “Продолжить” ещё раз.');
-      return;
-    }
-
-    runAnalyze({
-      a: { dob: dob1, age: aAge, birthPlace: aPlace, birthTime: aTime, accuracyLevel: aAcc },
-      b: { dob: dob2, age: bAge, birthPlace: bPlace, birthTime: bTime, accuracyLevel: bAcc },
-      selected: sel,
-    });
   };
 
   const goBack = () => {
@@ -461,12 +486,23 @@ export default function ReportClient() {
 
   const showMeta = Boolean(dob1 || dob2 || dbSelected || payload);
   const ready = Boolean(text) && !loading && !err;
+  const repStatus = normalizeStatus(dbReport?.status);
+
+  const subtitle = ready
+    ? 'ОТЧЁТ ГОТОВ'
+    : loading
+      ? 'ПРОХОДИТ АНАЛИЗ...'
+      : !paid
+        ? 'ОЖИДАЕМ ОПЛАТУ...'
+        : repStatus === 'ANALYZING' || repStatus === 'PROCESSING'
+          ? 'ГОТОВИМ РАЗБОР...'
+          : 'ОЖИДАЕМ ОТЧЁТ...';
 
   return (
     <main className="p">
       <header className="hero">
         <div className="title">РАЗБОР</div>
-        <div className="subtitle">{ready ? 'ОТЧЁТ ГОТОВ' : loading ? 'ПРОХОДИТ АНАЛИЗ...' : paid ? 'ОЖИДАЕМ ОТЧЁТ...' : 'ОЖИДАЕМ ОПЛАТУ...'}</div>
+        <div className="subtitle">{subtitle}</div>
       </header>
 
       {toastOn ? (
@@ -479,7 +515,7 @@ export default function ReportClient() {
         <section className="card">
           <div className="label">Ошибка</div>
           <div className="warn">{err}</div>
-          <div className="row">
+          <div className="actionsGrid">
             <button type="button" className="btn" onClick={() => fetchFromDb(false)} disabled={loading}>
               Обновить
             </button>
@@ -497,6 +533,16 @@ export default function ReportClient() {
           <div className="hint">
             Оплата: <b>{paid ? 'подтверждена' : 'ожидается'}</b>
           </div>
+          {paymentStatus ? (
+            <div className="hint">
+              Статус платежа: <b>{paymentStatus}</b>
+            </div>
+          ) : null}
+          {repStatus ? (
+            <div className="hint">
+              Статус отчёта: <b>{repStatus}</b>
+            </div>
+          ) : null}
         </section>
       ) : null}
 
@@ -514,7 +560,6 @@ export default function ReportClient() {
               {place2 ? ` · ${place2}` : ''}
               {time2 ? ` · ${time2}` : ''}
             </div>
-
             {selectedKeysRu.length ? (
               <div className="metaLine">
                 <b>Пункты:</b> {selectedKeysRu.join(', ')}
@@ -534,7 +579,7 @@ export default function ReportClient() {
 
         {text ? <pre className="out">{text}</pre> : null}
 
-        <div className="row">
+        <div className="actionsGrid">
           <button type="button" className="btn2" onClick={onCopy} disabled={!ready}>
             Скопировать
           </button>
@@ -543,18 +588,9 @@ export default function ReportClient() {
           </button>
         </div>
 
-        <div className="row">
+        <div className="actionsSingle">
           <button type="button" className="btn" onClick={() => fetchFromDb(false)} disabled={loading}>
-            Обновить из БД
-          </button>
-          <button type="button" className="btn2" onClick={goBack}>
-            Назад
-          </button>
-        </div>
-
-        <div className="row">
-          <button type="button" className="btn3" onClick={forceAnalyze} disabled={loading || !paid}>
-            Пересоздать отчёт (OpenAI)
+            Обновить
           </button>
         </div>
       </section>
@@ -578,7 +614,6 @@ export default function ReportClient() {
           width: 100%;
           max-width: 520px;
         }
-
         .hero {
           margin-top: 6px;
           padding: 18px 14px 16px;
@@ -592,7 +627,6 @@ export default function ReportClient() {
           position: relative;
           overflow: hidden;
         }
-
         .title {
           font-family: Montserrat, Manrope, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, 'Helvetica Neue', Arial;
           font-weight: 900;
@@ -603,14 +637,12 @@ export default function ReportClient() {
           margin: 0 0 6px;
           color: rgba(233, 236, 255, 0.92);
         }
-
         .subtitle {
           font-size: 12px;
           color: rgba(233, 236, 255, 0.64);
           letter-spacing: 0.14em;
           text-transform: uppercase;
         }
-
         .toast {
           width: 100%;
           max-width: 520px;
@@ -626,7 +658,6 @@ export default function ReportClient() {
           backdrop-filter: blur(12px);
           -webkit-backdrop-filter: blur(12px);
         }
-
         .card {
           border-radius: 22px;
           padding: 14px;
@@ -640,14 +671,12 @@ export default function ReportClient() {
           gap: 10px;
           overflow: hidden;
         }
-
         .label {
           font-size: 16px;
           font-weight: 950;
           color: var(--text);
           letter-spacing: -0.01em;
         }
-
         .hint {
           font-size: 12px;
           font-weight: 800;
@@ -655,29 +684,24 @@ export default function ReportClient() {
           padding-top: 6px;
           overflow-wrap: anywhere;
         }
-
         .warn {
           font-size: 12px;
           font-weight: 850;
           color: rgba(255, 180, 180, 0.95);
           overflow-wrap: anywhere;
         }
-
         .meta {
           font-size: 12px;
           font-weight: 800;
           color: rgba(233, 236, 255, 0.7);
           word-break: break-word;
         }
-
         .metaLine + .metaLine {
           margin-top: 4px;
         }
-
         .muted {
           opacity: 0.7;
         }
-
         .out {
           margin: 0;
           padding: 12px;
@@ -690,63 +714,55 @@ export default function ReportClient() {
           white-space: pre-wrap;
           word-break: break-word;
         }
-
-        .row {
-          display: flex;
+        .actionsGrid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
           gap: 10px;
           margin-top: 4px;
         }
-
+        .actionsSingle {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr);
+          gap: 10px;
+          margin-top: 4px;
+        }
         .btn,
-        .btn2,
-        .btn3 {
-          flex: 1;
+        .btn2 {
+          width: 100%;
+          min-width: 0;
           border-radius: 999px;
           padding: 12px 14px;
           font-size: 14px;
           font-weight: 950;
           cursor: pointer;
           -webkit-tap-highlight-color: transparent;
+          text-align: center;
         }
-
         .btn {
           border: 1px solid rgba(210, 179, 91, 0.35);
           color: var(--text);
           background: rgba(255, 255, 255, 0.04);
           box-shadow: 0 14px 38px rgba(0, 0, 0, 0.45);
         }
-
         .btn:disabled,
-        .btn2:disabled,
-        .btn3:disabled {
+        .btn2:disabled {
           opacity: 0.55;
           cursor: not-allowed;
           box-shadow: none;
         }
-
         .btn2 {
           border: 1px solid rgba(233, 236, 255, 0.14);
           color: rgba(233, 236, 255, 0.92);
           background: rgba(255, 255, 255, 0.03);
         }
-
-        .btn3 {
-          border: 1px solid rgba(233, 236, 255, 0.14);
-          color: rgba(233, 236, 255, 0.92);
-          background: rgba(255, 255, 255, 0.02);
-        }
-
         .btn:active,
-        .btn2:active,
-        .btn3:active {
+        .btn2:active {
           transform: scale(0.99);
           opacity: 0.92;
         }
-
         .bottom {
           margin-top: 14px;
         }
-
         .backBtn {
           width: 100%;
           padding: 14px 14px;
@@ -763,10 +779,14 @@ export default function ReportClient() {
           backdrop-filter: blur(16px);
           -webkit-backdrop-filter: blur(16px);
         }
-
         .backBtn:active {
           transform: scale(0.99);
           opacity: 0.92;
+        }
+        @media (max-width: 420px) {
+          .actionsGrid {
+            grid-template-columns: 1fr;
+          }
         }
       `}</style>
     </main>
