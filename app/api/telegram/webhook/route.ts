@@ -1,28 +1,34 @@
+/* path: app/api/telegram/webhook/route.ts */
 import { NextResponse } from 'next/server';
-import { bot } from '@/lib/telegram-bot';
+import { createTelegramBot } from '@/lib/telegram-bot';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-let isBotInitialized = false;
+let botInstance: ReturnType<typeof createTelegramBot> | null = null;
 
-async function ensureBotInitialized() {
-  if (isBotInitialized) return;
-  isBotInitialized = true;
+function getBot() {
+  if (!botInstance) {
+    botInstance = createTelegramBot();
+  }
+  return botInstance;
 }
 
 export async function POST(req: Request) {
   try {
-    await ensureBotInitialized();
-
+    const bot = getBot();
     const update = await req.json();
+
     await bot.handleUpdate(update);
 
     return NextResponse.json({ ok: true });
   } catch (e: any) {
     console.error('[TELEGRAM_WEBHOOK_ERROR]', e);
     return NextResponse.json(
-      { ok: false, error: String(e?.message || 'WEBHOOK_ERROR') },
+      {
+        ok: false,
+        error: String(e?.message || 'WEBHOOK_ERROR'),
+      },
       { status: 500 }
     );
   }
