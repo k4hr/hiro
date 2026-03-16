@@ -1,4 +1,4 @@
-/* path:  app/birth-chart/PageClient.tsx */
+/* path: app/birth-chart/PageClient.tsx */
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -35,6 +35,25 @@ function getInitDataNow(): string {
     if (fromTg) return fromTg;
   } catch {}
   return String(getCookie('tg_init_data') || '').trim();
+}
+
+function openPaymentUrl(url: string) {
+  const clean = String(url || '').trim();
+  if (!clean) return;
+
+  try {
+    window.location.assign(clean);
+    return;
+  } catch {}
+
+  try {
+    window.location.href = clean;
+    return;
+  } catch {}
+
+  try {
+    tg()?.openLink?.(clean);
+  } catch {}
 }
 
 const PRICE_RUB = 39;
@@ -101,13 +120,19 @@ function cleanText(v: string, max = 80) {
 }
 
 function isTimeOk(hh: string, mm: string) {
-  if (!hh && !mm) return true;
-  if (!/^\d{1,2}$/.test(hh) || !/^\d{1,2}$/.test(mm)) return false;
-  const H = Number(hh);
-  const M = Number(mm);
+  const h = hh.trim();
+  const m = mm.trim();
+
+  if (!h && !m) return true;
+  if (!h || !m) return false;
+  if (!/^\d{1,2}$/.test(h) || !/^\d{1,2}$/.test(m)) return false;
+
+  const H = Number(h);
+  const M = Number(m);
   if (Number.isNaN(H) || Number.isNaN(M)) return false;
   if (H < 0 || H > 23) return false;
   if (M < 0 || M > 59) return false;
+
   return true;
 }
 
@@ -117,14 +142,6 @@ function formatTime(hh: string, mm: string) {
 
 function storageKeyAstro(dob: string, place: string, time: string) {
   return `birth_chart_${dob}_${place}_${time}`.slice(0, 140);
-}
-
-function shortDebug(value: any, max = 220) {
-  try {
-    return JSON.stringify(value).slice(0, max);
-  } catch {
-    return String(value ?? '').slice(0, max);
-  }
 }
 
 export default function PageClient() {
@@ -157,7 +174,7 @@ export default function PageClient() {
 
   const [hh, setHh] = useState('');
   const [min, setMin] = useState('');
-  const timeOk = useMemo(() => isTimeOk(hh.trim(), min.trim()), [hh, min]);
+  const timeOk = useMemo(() => isTimeOk(hh, min), [hh, min]);
   const hasTime = useMemo(() => hh.trim().length > 0 || min.trim().length > 0, [hh, min]);
   const timeStr = useMemo(() => (hasTime && timeOk ? formatTime(hh.trim(), min.trim()) : ''), [hasTime, timeOk, hh, min]);
 
@@ -197,21 +214,21 @@ export default function PageClient() {
   }, [selected]);
 
   const totalRub = useMemo(() => paidCount * PRICE_RUB + SUMMARY_PRICE_RUB, [paidCount]);
-
-  const submitDisabled = !baseOk || submitting;
+  const submitDisabled = !baseOk || paidCount <= 0 || submitting;
 
   const onDayChange = (v: string) => {
     const clean = v.replace(/\D/g, '').slice(0, 2);
     setDd(clean);
     if (clean.length === 2) mmRef.current?.focus();
   };
+
   const onMonthChange = (v: string) => {
     const clean = v.replace(/\D/g, '').slice(0, 2);
     setMm(clean);
     if (clean.length === 2) yyyyRef.current?.focus();
   };
-  const onYearChange = (v: string) => setYyyy(v.replace(/\D/g, '').slice(0, 4));
 
+  const onYearChange = (v: string) => setYyyy(v.replace(/\D/g, '').slice(0, 4));
   const onHhChange = (v: string) => setHh(v.replace(/\D/g, '').slice(0, 2));
   const onMinChange = (v: string) => setMin(v.replace(/\D/g, '').slice(0, 2));
 
@@ -256,9 +273,8 @@ export default function PageClient() {
       createdAt: new Date().toISOString(),
     };
 
-    const sk = storageKeyAstro(payload.dob, payload.birthPlace, payload.birthTime);
     try {
-      sessionStorage.setItem(sk, JSON.stringify(payload));
+      sessionStorage.setItem(storageKeyAstro(payload.dob, payload.birthPlace, payload.birthTime), JSON.stringify(payload));
     } catch {}
 
     try {
@@ -279,44 +295,17 @@ export default function PageClient() {
         }),
       });
 
-      const sText = await sRes.text().catch(() => '');
-      let sJson: any = null;
-
-      try {
-        sJson = sText ? JSON.parse(sText) : null;
-      } catch {
-        sJson = null;
-      }
-
-      console.log('[ASTRO_SUBMIT_RESPONSE]', {
-        status: sRes.status,
-        ok: sRes.ok,
-        raw: sText,
-        json: sJson,
-      });
-
-      if (!sRes.ok) {
+      const sJson = (await sRes.json().catch(() => null)) as any;
+      if (!sRes.ok || !sJson || sJson.ok !== true || typeof sJson.reportId !== 'string') {
         setSubmitting(false);
-        setSubmitErr(sJson?.error ? String(sJson.error) : `SUBMIT_HTTP_${sRes.status}`);
+        setSubmitErr(sJson?.error ? String(sJson.error) : `SUBMIT_FAILED(${sRes.status})`);
         return;
       }
 
-      if (!sJson || sJson.ok !== true) {
-        setSubmitting(false);
-        setSubmitErr(sJson?.error ? String(sJson.error) : 'SUBMIT_BAD_JSON');
-        return;
-      }
-
-      const reportId =
-        typeof sJson.reportId === 'string' && sJson.reportId.trim()
-          ? sJson.reportId.trim()
-          : typeof sJson.report?.id === 'string' && sJson.report.id.trim()
-            ? sJson.report.id.trim()
-            : '';
-
+      const reportId = String(sJson.reportId).trim();
       if (!reportId) {
         setSubmitting(false);
-        setSubmitErr(`NO_REPORT_ID: ${shortDebug(sJson)}`);
+        setSubmitErr('NO_REPORT_ID');
         return;
       }
 
@@ -326,53 +315,32 @@ export default function PageClient() {
         `&time=${encodeURIComponent(payload.birthTime)}` +
         `&reportId=${encodeURIComponent(reportId)}`;
 
+      if (sJson.alreadyPaid === true) {
+        router.push(returnPath);
+        return;
+      }
+
       const pRes = await fetch('/api/yookassa/create-payment', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          initData,
           reportId,
           description: 'Арканум · карта неба',
           returnPath,
         }),
       });
 
-      const pText = await pRes.text().catch(() => '');
-      let pJson: any = null;
+      const pJson = (await pRes.json().catch(() => null)) as any;
+      const paymentUrl = String(pJson?.url || pJson?.confirmationUrl || '').trim();
 
-      try {
-        pJson = pText ? JSON.parse(pText) : null;
-      } catch {
-        pJson = null;
-      }
-
-      console.log('[YOOKASSA_CREATE_PAYMENT_RESPONSE_CLIENT]', {
-        status: pRes.status,
-        ok: pRes.ok,
-        raw: pText,
-        json: pJson,
-      });
-
-      const confirmationUrl = String(pJson?.confirmationUrl ?? '').trim();
-
-      if (!pRes.ok || !pJson || pJson.ok !== true || !confirmationUrl) {
+      if (!pRes.ok || !pJson || pJson.ok !== true || !paymentUrl) {
         setSubmitting(false);
-        setSubmitErr(
-          pJson?.error
-            ? String(pJson.error)
-            : !pRes.ok
-              ? `PAYMENT_HTTP_${pRes.status}`
-              : !pJson
-                ? 'PAYMENT_BAD_JSON'
-                : 'NO_CONFIRMATION_URL'
-        );
+        setSubmitErr(pJson?.error ? String(pJson.error) : `PAYMENT_CREATE_FAILED(${pRes.status})`);
         return;
       }
 
-      try {
-        tg()?.openLink?.(confirmationUrl);
-      } catch {
-        window.location.href = confirmationUrl;
-      }
+      openPaymentUrl(paymentUrl);
     } catch (e: any) {
       setSubmitting(false);
       setSubmitErr(e?.message ? String(e.message) : 'NETWORK_ERROR');
