@@ -1,4 +1,3 @@
-/* path: app/date-code/combo/ComboPageClient.tsx */
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -18,7 +17,6 @@ function haptic(type: 'light' | 'medium' = 'light') {
   } catch {}
 }
 
-/* cookie helpers */
 function getCookie(name: string): string {
   try {
     const rows = document.cookie ? document.cookie.split('; ') : [];
@@ -36,6 +34,25 @@ function getInitDataNow(): string {
     if (fromTg) return fromTg;
   } catch {}
   return String(getCookie('tg_init_data') || '').trim();
+}
+
+function openPaymentUrl(url: string) {
+  const clean = String(url || '').trim();
+  if (!clean) return;
+
+  try {
+    window.location.assign(clean);
+    return;
+  } catch {}
+
+  try {
+    window.location.href = clean;
+    return;
+  } catch {}
+
+  try {
+    tg()?.openLink?.(clean);
+  } catch {}
 }
 
 const PRICE_RUB = 39;
@@ -135,18 +152,74 @@ export default function ComboPageClient() {
   const nameClean = useMemo(() => cleanName(name), [name]);
   const nameOk = useMemo(() => nameClean.length >= 2, [nameClean]);
 
+  const baseOk = dobOk && nameOk;
+
   const options = useMemo(
     () =>
       [
-        { key: 'COMBO_RESONANCE' as const, title: 'Резонанс имени и жизненного пути', sub: 'Насколько имя “попадает” в ваш путь', price: PRICE_RUB, fixed: false },
-        { key: 'COMBO_STRENGTHS' as const, title: 'Сильные стороны', sub: 'Что усилено именно вашей связкой', price: PRICE_RUB, fixed: false },
-        { key: 'COMBO_WEAKNESSES' as const, title: 'Слабые места', sub: 'Что может ломать стабильность и результат', price: PRICE_RUB, fixed: false },
-        { key: 'COMBO_MONEY' as const, title: 'Деньги и стратегия заработка', sub: 'Лучшая модель денег + что режет доход', price: PRICE_RUB, fixed: false },
-        { key: 'COMBO_CAREER' as const, title: 'Карьера и формат работы', sub: 'Где вы сильнее всего', price: PRICE_RUB, fixed: false },
-        { key: 'COMBO_COMM' as const, title: 'Коммуникация и влияние', sub: 'Как убеждать и какие ошибки общения', price: PRICE_RUB, fixed: false },
-        { key: 'COMBO_ENERGY' as const, title: 'Энергия и режим', sub: 'Что даёт ресурс, что выжигает, идеальный ритм', price: PRICE_RUB, fixed: false },
-        { key: 'COMBO_LESSON' as const, title: 'Главный урок', sub: 'Повторяющаяся тема роста + как закрывать действием', price: PRICE_RUB, fixed: false },
-        { key: 'SUMMARY' as const, title: 'Итог', sub: 'Сводка + 7 стратегических правил', price: SUMMARY_PRICE_RUB, fixed: true },
+        {
+          key: 'COMBO_RESONANCE' as const,
+          title: 'Резонанс имени и жизненного пути',
+          sub: 'Насколько имя “попадает” в ваш путь',
+          price: PRICE_RUB,
+          fixed: false,
+        },
+        {
+          key: 'COMBO_STRENGTHS' as const,
+          title: 'Сильные стороны',
+          sub: 'Что усилено именно вашей связкой',
+          price: PRICE_RUB,
+          fixed: false,
+        },
+        {
+          key: 'COMBO_WEAKNESSES' as const,
+          title: 'Слабые места',
+          sub: 'Что может ломать стабильность и результат',
+          price: PRICE_RUB,
+          fixed: false,
+        },
+        {
+          key: 'COMBO_MONEY' as const,
+          title: 'Деньги и стратегия заработка',
+          sub: 'Лучшая модель денег + что режет доход',
+          price: PRICE_RUB,
+          fixed: false,
+        },
+        {
+          key: 'COMBO_CAREER' as const,
+          title: 'Карьера и формат работы',
+          sub: 'Где вы сильнее всего',
+          price: PRICE_RUB,
+          fixed: false,
+        },
+        {
+          key: 'COMBO_COMM' as const,
+          title: 'Коммуникация и влияние',
+          sub: 'Как убеждать и какие ошибки общения',
+          price: PRICE_RUB,
+          fixed: false,
+        },
+        {
+          key: 'COMBO_ENERGY' as const,
+          title: 'Энергия и режим',
+          sub: 'Что даёт ресурс, что выжигает, идеальный ритм',
+          price: PRICE_RUB,
+          fixed: false,
+        },
+        {
+          key: 'COMBO_LESSON' as const,
+          title: 'Главный урок',
+          sub: 'Повторяющаяся тема роста + как закрывать действием',
+          price: PRICE_RUB,
+          fixed: false,
+        },
+        {
+          key: 'SUMMARY' as const,
+          title: 'Итог',
+          sub: 'Сводка + 7 стратегических правил',
+          price: SUMMARY_PRICE_RUB,
+          fixed: true,
+        },
       ] as const,
     []
   );
@@ -184,7 +257,7 @@ export default function ComboPageClient() {
   }, [selected]);
 
   const totalRub = useMemo(() => paidCount * PRICE_RUB + SUMMARY_PRICE_RUB, [paidCount]);
-  const submitDisabled = !dobOk || !nameOk || submitting;
+  const submitDisabled = !baseOk || submitting;
 
   const onDayChange = (v: string) => {
     const clean = v.replace(/\D/g, '').slice(0, 2);
@@ -205,7 +278,7 @@ export default function ComboPageClient() {
 
   const onSubmit = async () => {
     haptic('medium');
-    if (!dobOk || !nameOk || submitting) return;
+    if (!baseOk || submitting) return;
 
     const initData = getInitDataNow();
     if (!initData) {
@@ -258,14 +331,20 @@ export default function ComboPageClient() {
       const reportId = String(sJson.reportId);
 
       const returnPath =
-        `/date-code/combo/report?dob=${encodeURIComponent(dobStr)}` +
-        `&name=${encodeURIComponent(nameClean)}` +
+        `/date-code/combo/report?dob=${encodeURIComponent(payload.dob)}` +
+        `&name=${encodeURIComponent(payload.name)}` +
         `&reportId=${encodeURIComponent(reportId)}`;
+
+      if (sJson.alreadyPaid === true) {
+        router.push(returnPath);
+        return;
+      }
 
       const pRes = await fetch('/api/yookassa/create-payment', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          initData,
           reportId,
           description: 'Код судьбы · дата + имя',
           returnPath,
@@ -273,19 +352,16 @@ export default function ComboPageClient() {
       });
 
       const pJson = (await pRes.json().catch(() => null)) as any;
-      const confirmationUrl = String(pJson?.confirmationUrl ?? '');
+      const paymentUrl = String(pJson?.url || pJson?.confirmationUrl || '').trim();
 
-      if (!pRes.ok || !pJson || pJson.ok !== true || !confirmationUrl) {
+      if (!pRes.ok || !pJson || pJson.ok !== true || !paymentUrl) {
         setSubmitting(false);
         setSubmitErr(pJson?.error ? String(pJson.error) : `PAYMENT_CREATE_FAILED(${pRes.status})`);
         return;
       }
 
-      try {
-        tg()?.openLink?.(confirmationUrl);
-      } catch {
-        window.location.href = confirmationUrl;
-      }
+      setSubmitting(false);
+      openPaymentUrl(paymentUrl);
     } catch (e: any) {
       setSubmitting(false);
       setSubmitErr(e?.message ? String(e.message) : 'NETWORK_ERROR');
@@ -358,7 +434,7 @@ export default function ComboPageClient() {
         {name ? (nameOk ? <div className="hint center">Ок: {nameClean}</div> : <div className="warn center">Имя слишком короткое.</div>) : null}
       </section>
 
-      {dobOk && nameOk ? (
+      {baseOk ? (
         <section className="card" aria-label="Выбор пунктов">
           <div className="label">Что включить в разбор</div>
           <div className="desc">Выберите необходимые пункты.</div>
@@ -367,6 +443,7 @@ export default function ComboPageClient() {
             {options.map((o) => {
               const on = selected[o.key];
               const isFixed = o.fixed === true;
+
               return (
                 <button
                   key={o.key}
@@ -604,8 +681,6 @@ export default function ComboPageClient() {
           font-weight: 850;
           color: rgba(255, 180, 180, 0.95);
           overflow-wrap: anywhere;
-          padding-top: 10px;
-          border-top: 1px solid rgba(233, 236, 255, 0.1);
           text-align: center;
         }
 
