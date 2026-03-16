@@ -139,7 +139,7 @@ function openShare() {
 
   const url = buildShareUrl();
   const text = 'Смотри разбор “Карта неба” в мини-приложении';
-  const shareLink = `https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`;
+  const shareLink = `https://t.me/arcanumapp_bot/directlink`;
 
   try {
     const w = tg();
