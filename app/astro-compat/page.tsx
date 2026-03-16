@@ -1,4 +1,3 @@
-/* path: app/astro-compat/page.tsx */
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -35,6 +34,19 @@ function getInitDataNow(): string {
     if (fromTg) return fromTg;
   } catch {}
   return String(getCookie('tg_init_data') || '').trim();
+}
+
+function openPaymentUrl(url: string) {
+  const clean = String(url || '').trim();
+  if (!clean) return;
+  try {
+    window.location.assign(clean);
+    return;
+  } catch {}
+  try {
+    window.location.href = clean;
+    return;
+  } catch {}
 }
 
 const PRICE_RUB = 39;
@@ -96,7 +108,7 @@ function calcAge(dd: string, mm: string, yyyy: string) {
   return age;
 }
 
-function cleanText(v: string, max = 80) {
+function cleanText(v: string, max = 96) {
   return v.replace(/\s+/g, ' ').trim().slice(0, max);
 }
 
@@ -105,7 +117,7 @@ function isTimeOk(hh: string, mm: string) {
   if (!/^\d{1,2}$/.test(hh) || !/^\d{1,2}$/.test(mm)) return false;
   const H = Number(hh);
   const M = Number(mm);
-  if (Number.isNaN(H) || Number.isNaN(M)) return false;
+  if (!Number.isFinite(H) || !Number.isFinite(M)) return false;
   if (H < 0 || H > 23) return false;
   if (M < 0 || M > 59) return false;
   return true;
@@ -131,16 +143,11 @@ function accuracyTextFor(level: number) {
   return 'Точность: базовая (только дата)';
 }
 
-function storageKeyAstroCompat(a: { dob: string; place: string; time: string }, b: { dob: string; place: string; time: string }) {
+function storageKeyAstroCompat(
+  a: { dob: string; place: string; time: string },
+  b: { dob: string; place: string; time: string }
+) {
   return `astro_compat_${a.dob}_${a.place}_${a.time}_${b.dob}_${b.place}_${b.time}`.slice(0, 140);
-}
-
-function shortDebug(value: any, max = 220) {
-  try {
-    return JSON.stringify(value).slice(0, max);
-  } catch {
-    return String(value ?? '').slice(0, max);
-  }
 }
 
 export default function AstroCompatPage() {
@@ -205,12 +212,48 @@ export default function AstroCompatPage() {
   const options = useMemo(
     () =>
       [
-        { key: 'ACOMPAT_LOVE' as const, title: 'Любовь и близость', sub: 'Романтика, привязанность, как “держится” связь', price: PRICE_RUB, fixed: false },
-        { key: 'ACOMPAT_SEX' as const, title: 'Секс и страсть', sub: 'Влечение, ревность, границы, сила/контроль', price: PRICE_RUB, fixed: false },
-        { key: 'ACOMPAT_MONEY' as const, title: 'Деньги и ресурсы', sub: 'Траты, стратегия, риски, “кто главный”', price: PRICE_RUB, fixed: false },
-        { key: 'ACOMPAT_CONFLICT' as const, title: 'Конфликты и примирение', sub: 'Как вы ссоритесь и миритесь', price: PRICE_RUB, fixed: false },
-        { key: 'ACOMPAT_FAMILY' as const, title: 'Быт и семья', sub: 'Дом, ответственность', price: PRICE_RUB, fixed: false },
-        { key: 'ACOMPAT_FORMULA' as const, title: 'Итог', sub: 'Формула пары', price: SUMMARY_PRICE_RUB, fixed: true },
+        {
+          key: 'ACOMPAT_LOVE' as const,
+          title: 'Любовь и близость',
+          sub: 'Романтика, привязанность, как держится связь',
+          price: PRICE_RUB,
+          fixed: false,
+        },
+        {
+          key: 'ACOMPAT_SEX' as const,
+          title: 'Секс и страсть',
+          sub: 'Влечение, ревность, границы, сила и контроль',
+          price: PRICE_RUB,
+          fixed: false,
+        },
+        {
+          key: 'ACOMPAT_MONEY' as const,
+          title: 'Деньги и ресурсы',
+          sub: 'Траты, стратегия, риски, кто ведёт тему денег',
+          price: PRICE_RUB,
+          fixed: false,
+        },
+        {
+          key: 'ACOMPAT_CONFLICT' as const,
+          title: 'Конфликты и примирение',
+          sub: 'Как вы ссоритесь, остываете и собираете связь обратно',
+          price: PRICE_RUB,
+          fixed: false,
+        },
+        {
+          key: 'ACOMPAT_FAMILY' as const,
+          title: 'Быт и семья',
+          sub: 'Дом, ответственность, повседневная совместимость',
+          price: PRICE_RUB,
+          fixed: false,
+        },
+        {
+          key: 'ACOMPAT_FORMULA' as const,
+          title: 'Итог',
+          sub: 'Формула пары и 7 правил',
+          price: SUMMARY_PRICE_RUB,
+          fixed: true,
+        },
       ] as const,
     []
   );
@@ -236,7 +279,6 @@ export default function AstroCompatPage() {
   }, [selected]);
 
   const totalRub = useMemo(() => paidCount * PRICE_RUB + SUMMARY_PRICE_RUB, [paidCount]);
-
   const submitDisabled = !baseOk || submitting;
 
   const onDay1 = (v: string) => {
@@ -244,11 +286,13 @@ export default function AstroCompatPage() {
     setDd1(clean);
     if (clean.length === 2) mm1Ref.current?.focus();
   };
+
   const onMonth1 = (v: string) => {
     const clean = v.replace(/\D/g, '').slice(0, 2);
     setMm1(clean);
     if (clean.length === 2) yy1Ref.current?.focus();
   };
+
   const onYear1 = (v: string) => setYy1(v.replace(/\D/g, '').slice(0, 4));
 
   const onDay2 = (v: string) => {
@@ -256,11 +300,13 @@ export default function AstroCompatPage() {
     setDd2(clean);
     if (clean.length === 2) mm2Ref.current?.focus();
   };
+
   const onMonth2 = (v: string) => {
     const clean = v.replace(/\D/g, '').slice(0, 2);
     setMm2(clean);
     if (clean.length === 2) yy2Ref.current?.focus();
   };
+
   const onYear2 = (v: string) => setYy2(v.replace(/\D/g, '').slice(0, 4));
 
   const onSubmit = async () => {
@@ -323,44 +369,17 @@ export default function AstroCompatPage() {
         }),
       });
 
-      const sText = await sRes.text().catch(() => '');
-      let sJson: any = null;
-
-      try {
-        sJson = sText ? JSON.parse(sText) : null;
-      } catch {
-        sJson = null;
-      }
-
-      console.log('[ASTRO_COMPAT_SUBMIT_RESPONSE]', {
-        status: sRes.status,
-        ok: sRes.ok,
-        raw: sText,
-        json: sJson,
-      });
-
-      if (!sRes.ok) {
+      const sJson = (await sRes.json().catch(() => null)) as any;
+      if (!sRes.ok || !sJson || sJson.ok !== true || typeof sJson.reportId !== 'string') {
         setSubmitting(false);
-        setSubmitErr(sJson?.error ? String(sJson.error) : `SUBMIT_HTTP_${sRes.status}`);
+        setSubmitErr(sJson?.error ? String(sJson.error) : `SUBMIT_FAILED(${sRes.status})`);
         return;
       }
 
-      if (!sJson || sJson.ok !== true) {
-        setSubmitting(false);
-        setSubmitErr(sJson?.error ? String(sJson.error) : 'SUBMIT_BAD_JSON');
-        return;
-      }
-
-      const reportId =
-        typeof sJson.reportId === 'string' && sJson.reportId.trim()
-          ? sJson.reportId.trim()
-          : typeof sJson.report?.id === 'string' && sJson.report.id.trim()
-            ? sJson.report.id.trim()
-            : '';
-
+      const reportId = String(sJson.reportId || '').trim();
       if (!reportId) {
         setSubmitting(false);
-        setSubmitErr(`NO_REPORT_ID: ${shortDebug(sJson)}`);
+        setSubmitErr('NO_REPORT_ID');
         return;
       }
 
@@ -373,53 +392,33 @@ export default function AstroCompatPage() {
         `&time2=${encodeURIComponent(payload.b.birthTime)}` +
         `&reportId=${encodeURIComponent(reportId)}`;
 
+      if (sJson.alreadyPaid === true) {
+        router.push(returnPath);
+        return;
+      }
+
       const pRes = await fetch('/api/yookassa/create-payment', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          initData,
           reportId,
           description: 'Арканум · астрологическая совместимость',
           returnPath,
         }),
       });
 
-      const pText = await pRes.text().catch(() => '');
-      let pJson: any = null;
+      const pJson = (await pRes.json().catch(() => null)) as any;
+      const paymentUrl = String(pJson?.url || pJson?.confirmationUrl || '').trim();
 
-      try {
-        pJson = pText ? JSON.parse(pText) : null;
-      } catch {
-        pJson = null;
-      }
-
-      console.log('[YOOKASSA_CREATE_PAYMENT_RESPONSE_CLIENT_ASTRO_COMPAT]', {
-        status: pRes.status,
-        ok: pRes.ok,
-        raw: pText,
-        json: pJson,
-      });
-
-      const confirmationUrl = String(pJson?.confirmationUrl ?? '').trim();
-
-      if (!pRes.ok || !pJson || pJson.ok !== true || !confirmationUrl) {
+      if (!pRes.ok || !pJson || pJson.ok !== true || !paymentUrl) {
         setSubmitting(false);
-        setSubmitErr(
-          pJson?.error
-            ? String(pJson.error)
-            : !pRes.ok
-              ? `PAYMENT_HTTP_${pRes.status}`
-              : !pJson
-                ? 'PAYMENT_BAD_JSON'
-                : 'NO_CONFIRMATION_URL'
-        );
+        setSubmitErr(pJson?.error ? String(pJson.error) : `PAYMENT_CREATE_FAILED(${pRes.status})`);
         return;
       }
 
-      try {
-        tg()?.openLink?.(confirmationUrl);
-      } catch {
-        window.location.href = confirmationUrl;
-      }
+      setSubmitting(false);
+      openPaymentUrl(paymentUrl);
     } catch (e: any) {
       setSubmitting(false);
       setSubmitErr(e?.message ? String(e.message) : 'NETWORK_ERROR');
@@ -447,7 +446,7 @@ export default function AstroCompatPage() {
 
       <section className="card">
         <div className="label center">Вы</div>
-        <div className="desc center">Дата обязательна. Место и время — усиливают точность.</div>
+        <div className="desc center">Дата обязательна. Место и время усиливают точность.</div>
 
         <div className="dob">
           <div className="dobField">
@@ -474,8 +473,19 @@ export default function AstroCompatPage() {
         <div className="row1">
           <div className="box">
             <div className="miniLabel">Место рождения (опционально)</div>
-            <input value={place1} onChange={(e) => setPlace1(e.target.value)} placeholder="Город, страна" inputMode="text" autoComplete="off" spellCheck={false} />
-            {place1 ? <div className={`miniHint ${place1Clean.trim().length >= 3 ? 'miniHint--ok' : ''}`}>{place1Clean.trim().length >= 3 ? 'Место принято' : 'Введите чуть точнее'}</div> : null}
+            <input
+              value={place1}
+              onChange={(e) => setPlace1(e.target.value)}
+              placeholder="Город, страна"
+              inputMode="text"
+              autoComplete="off"
+              spellCheck={false}
+            />
+            {place1 ? (
+              <div className={`miniHint ${place1Clean.trim().length >= 3 ? 'miniHint--ok' : ''}`}>
+                {place1Clean.trim().length >= 3 ? 'Место принято' : 'Введите чуть точнее'}
+              </div>
+            ) : null}
           </div>
         </div>
 
@@ -487,7 +497,11 @@ export default function AstroCompatPage() {
               <div className="colon">:</div>
               <input value={min1} onChange={(e) => setMin1(e.target.value.replace(/\D/g, '').slice(0, 2))} inputMode="numeric" placeholder="ММ" />
             </div>
-            {hasTime1 ? <div className={`miniHint ${timeOk1 ? 'miniHint--ok' : ''}`}>{timeOk1 ? `Ок: ${timeStr1}` : 'Проверь время'}</div> : <div className="miniHint">Можно пропустить</div>}
+            {hasTime1 ? (
+              <div className={`miniHint ${timeOk1 ? 'miniHint--ok' : ''}`}>{timeOk1 ? `Ок: ${timeStr1}` : 'Проверь время'}</div>
+            ) : (
+              <div className="miniHint">Можно пропустить</div>
+            )}
           </div>
         </div>
 
@@ -511,7 +525,7 @@ export default function AstroCompatPage() {
 
       <section className="card">
         <div className="label center">Партнёр</div>
-        <div className="desc center">Дата обязательна. Место и время — усиливают точность.</div>
+        <div className="desc center">Дата обязательна. Место и время усиливают точность.</div>
 
         <div className="dob">
           <div className="dobField">
@@ -538,8 +552,19 @@ export default function AstroCompatPage() {
         <div className="row1">
           <div className="box">
             <div className="miniLabel">Место рождения (опционально)</div>
-            <input value={place2} onChange={(e) => setPlace2(e.target.value)} placeholder="Город, страна" inputMode="text" autoComplete="off" spellCheck={false} />
-            {place2 ? <div className={`miniHint ${place2Clean.trim().length >= 3 ? 'miniHint--ok' : ''}`}>{place2Clean.trim().length >= 3 ? 'Место принято' : 'Введите чуть точнее'}</div> : null}
+            <input
+              value={place2}
+              onChange={(e) => setPlace2(e.target.value)}
+              placeholder="Город, страна"
+              inputMode="text"
+              autoComplete="off"
+              spellCheck={false}
+            />
+            {place2 ? (
+              <div className={`miniHint ${place2Clean.trim().length >= 3 ? 'miniHint--ok' : ''}`}>
+                {place2Clean.trim().length >= 3 ? 'Место принято' : 'Введите чуть точнее'}
+              </div>
+            ) : null}
           </div>
         </div>
 
@@ -551,7 +576,11 @@ export default function AstroCompatPage() {
               <div className="colon">:</div>
               <input value={min2} onChange={(e) => setMin2(e.target.value.replace(/\D/g, '').slice(0, 2))} inputMode="numeric" placeholder="ММ" />
             </div>
-            {hasTime2 ? <div className={`miniHint ${timeOk2 ? 'miniHint--ok' : ''}`}>{timeOk2 ? `Ок: ${timeStr2}` : 'Проверь время'}</div> : <div className="miniHint">Можно пропустить</div>}
+            {hasTime2 ? (
+              <div className={`miniHint ${timeOk2 ? 'miniHint--ok' : ''}`}>{timeOk2 ? `Ок: ${timeStr2}` : 'Проверь время'}</div>
+            ) : (
+              <div className="miniHint">Можно пропустить</div>
+            )}
           </div>
         </div>
 
@@ -576,7 +605,7 @@ export default function AstroCompatPage() {
       {baseOk ? (
         <section className="card">
           <div className="label">Что разобрать</div>
-          <div className="desc">Выберите необходимые пункты.</div>
+          <div className="desc">Выберите нужные пункты.</div>
 
           <div className="stack">
             {options.map((o) => {
@@ -623,7 +652,7 @@ export default function AstroCompatPage() {
       ) : (
         <section className="card">
           <div className="label">Дальше</div>
-          <div className="hint">Заполните даты. Место и время — по желанию.</div>
+          <div className="hint">Заполните обе даты. Место и время можно добавить для большей точности.</div>
           <button type="button" className="back" onClick={goBack}>
             Назад
           </button>
@@ -643,7 +672,6 @@ export default function AstroCompatPage() {
           width: 100%;
           max-width: 520px;
         }
-
         .hero {
           margin-top: 6px;
           padding: 18px 14px 16px;
@@ -657,7 +685,6 @@ export default function AstroCompatPage() {
           position: relative;
           overflow: hidden;
         }
-
         .hero::before {
           content: '';
           position: absolute;
@@ -667,7 +694,6 @@ export default function AstroCompatPage() {
             radial-gradient(900px 420px at 90% 130%, rgba(245, 158, 11, 0.08) 0%, rgba(245, 158, 11, 0) 60%);
           pointer-events: none;
         }
-
         .title {
           position: relative;
           font-family: Montserrat, Manrope, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, 'Helvetica Neue', Arial;
@@ -686,7 +712,6 @@ export default function AstroCompatPage() {
           animation: shimmer 3.2s ease-in-out infinite;
           will-change: background-position;
         }
-
         @keyframes shimmer {
           0% {
             background-position: 0% 50%;
@@ -698,7 +723,6 @@ export default function AstroCompatPage() {
             background-position: 0% 50%;
           }
         }
-
         .subtitle {
           position: relative;
           font-size: 12px;
@@ -706,7 +730,6 @@ export default function AstroCompatPage() {
           letter-spacing: 0.14em;
           text-transform: uppercase;
         }
-
         .card {
           border-radius: 22px;
           padding: 14px;
@@ -720,38 +743,32 @@ export default function AstroCompatPage() {
           gap: 10px;
           overflow: hidden;
         }
-
         .label {
           font-size: 16px;
           font-weight: 950;
           color: var(--text);
           letter-spacing: -0.01em;
         }
-
         .desc {
           font-size: 13px;
           font-weight: 700;
           color: rgba(233, 236, 255, 0.68);
           line-height: 1.35;
         }
-
         .center {
           text-align: center;
         }
-
         .dob {
           display: grid;
           grid-template-columns: 1fr 1fr 1.35fr;
           gap: 10px;
         }
-
         .dobField {
           border-radius: 16px;
           border: 1px solid rgba(233, 236, 255, 0.14);
           background: rgba(255, 255, 255, 0.03);
           padding: 10px 10px 12px;
         }
-
         .dobLabel {
           font-size: 11px;
           color: rgba(233, 236, 255, 0.62);
@@ -760,7 +777,6 @@ export default function AstroCompatPage() {
           margin-bottom: 6px;
           text-align: center;
         }
-
         .dobField input {
           width: 100%;
           border: 0;
@@ -772,20 +788,17 @@ export default function AstroCompatPage() {
           letter-spacing: 0.04em;
           text-align: center;
         }
-
         .row1 {
           display: flex;
           flex-direction: column;
           gap: 10px;
         }
-
         .box {
           border-radius: 16px;
           border: 1px solid rgba(233, 236, 255, 0.14);
           background: rgba(255, 255, 255, 0.03);
           padding: 10px 10px 12px;
         }
-
         .miniLabel {
           font-size: 11px;
           color: rgba(233, 236, 255, 0.62);
@@ -794,7 +807,6 @@ export default function AstroCompatPage() {
           margin-bottom: 6px;
           text-align: center;
         }
-
         .box input {
           width: 100%;
           border: 0;
@@ -806,14 +818,12 @@ export default function AstroCompatPage() {
           letter-spacing: 0.01em;
           text-align: center;
         }
-
         .time {
           display: grid;
           grid-template-columns: 1fr 22px 1fr;
           align-items: center;
           gap: 6px;
         }
-
         .time input {
           width: 100%;
           border: 0;
@@ -825,13 +835,11 @@ export default function AstroCompatPage() {
           letter-spacing: 0.04em;
           text-align: center;
         }
-
         .colon {
           text-align: center;
           color: rgba(233, 236, 255, 0.62);
           font-weight: 900;
         }
-
         .miniHint {
           margin-top: 8px;
           font-size: 12px;
@@ -839,11 +847,9 @@ export default function AstroCompatPage() {
           color: rgba(233, 236, 255, 0.58);
           text-align: center;
         }
-
         .miniHint--ok {
           color: rgba(210, 179, 91, 0.92);
         }
-
         .hint {
           margin-top: 4px;
           font-size: 12px;
@@ -853,17 +859,13 @@ export default function AstroCompatPage() {
           border-top: 1px solid rgba(233, 236, 255, 0.1);
           overflow-wrap: anywhere;
         }
-
         .warn {
           font-size: 12px;
           font-weight: 850;
           color: rgba(255, 180, 180, 0.95);
           overflow-wrap: anywhere;
-          padding-top: 10px;
-          border-top: 1px solid rgba(233, 236, 255, 0.1);
           text-align: center;
         }
-
         .accuracy {
           margin-top: 2px;
           border-top: 1px solid rgba(233, 236, 255, 0.1);
@@ -872,32 +874,27 @@ export default function AstroCompatPage() {
           flex-direction: column;
           gap: 8px;
         }
-
         .accTop {
           display: flex;
           align-items: baseline;
           justify-content: space-between;
           gap: 10px;
         }
-
         .accText {
           font-size: 12px;
           font-weight: 900;
           color: rgba(233, 236, 255, 0.82);
         }
-
         .accLevel {
           font-size: 12px;
           font-weight: 900;
           color: rgba(233, 236, 255, 0.55);
         }
-
         .accBar {
           display: grid;
           grid-template-columns: 1fr 1fr 1fr;
           gap: 8px;
         }
-
         .seg {
           height: 10px;
           border-radius: 999px;
@@ -905,13 +902,11 @@ export default function AstroCompatPage() {
           background: rgba(255, 255, 255, 0.03);
           box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
         }
-
         .seg.on {
           border-color: rgba(210, 179, 91, 0.35);
           background: rgba(210, 179, 91, 0.16);
           box-shadow: 0 10px 26px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.08);
         }
-
         .accLegend {
           display: grid;
           grid-template-columns: 1fr 1fr 1fr;
@@ -921,17 +916,14 @@ export default function AstroCompatPage() {
           color: rgba(233, 236, 255, 0.55);
           text-align: center;
         }
-
         .accL--on {
           color: rgba(210, 179, 91, 0.92);
         }
-
         .stack {
           display: flex;
           flex-direction: column;
           gap: 10px;
         }
-
         .opt {
           width: 100%;
           border-radius: 18px;
@@ -948,69 +940,57 @@ export default function AstroCompatPage() {
           text-align: left;
           overflow: hidden;
         }
-
         .opt--on {
           border-color: rgba(210, 179, 91, 0.4);
           background: rgba(255, 255, 255, 0.04);
         }
-
         .opt--fixed {
           cursor: default;
           opacity: 0.92;
         }
-
         .opt:active {
           transform: scale(0.99);
           opacity: 0.92;
         }
-
         .opt:disabled:active {
           transform: none;
           opacity: 0.92;
         }
-
         .optText {
           min-width: 0;
           flex: 1;
         }
-
         .optT {
           font-weight: 950;
           color: rgba(233, 236, 255, 0.92);
           font-size: 14px;
         }
-
         .optS {
           margin-top: 3px;
           font-size: 12px;
           color: rgba(233, 236, 255, 0.62);
           line-height: 1.25;
         }
-
         .optR {
           width: 96px;
           text-align: right;
           font-weight: 950;
           flex: 0 0 96px;
         }
-
         .tick {
           color: rgba(210, 179, 91, 0.95);
           font-size: 18px;
         }
-
         .plus {
           color: rgba(233, 236, 255, 0.7);
           font-size: 12px;
           white-space: nowrap;
         }
-
         .fixed {
           color: rgba(210, 179, 91, 0.95);
           font-size: 12px;
           white-space: nowrap;
         }
-
         .total {
           margin-top: 2px;
           padding-top: 12px;
@@ -1020,20 +1000,17 @@ export default function AstroCompatPage() {
           justify-content: space-between;
           gap: 10px;
         }
-
         .totalT {
           font-weight: 950;
           color: rgba(233, 236, 255, 0.92);
           font-size: 14px;
         }
-
         .totalS {
           margin-top: 3px;
           font-size: 12px;
           font-weight: 800;
           color: rgba(233, 236, 255, 0.62);
         }
-
         .totalR {
           font-weight: 950;
           color: rgba(210, 179, 91, 0.95);
@@ -1041,7 +1018,6 @@ export default function AstroCompatPage() {
           letter-spacing: 0.02em;
           white-space: nowrap;
         }
-
         .send {
           margin-top: 2px;
           border: 1px solid rgba(210, 179, 91, 0.35);
@@ -1055,18 +1031,15 @@ export default function AstroCompatPage() {
           box-shadow: 0 14px 38px rgba(0, 0, 0, 0.45);
           -webkit-tap-highlight-color: transparent;
         }
-
         .send:active {
           transform: scale(0.98);
           opacity: 0.92;
         }
-
         .send--off {
           opacity: 0.55;
           cursor: not-allowed;
           box-shadow: none;
         }
-
         .back {
           margin-top: 6px;
           border-radius: 999px;
@@ -1079,12 +1052,10 @@ export default function AstroCompatPage() {
           color: rgba(233, 236, 255, 0.92);
           background: rgba(255, 255, 255, 0.03);
         }
-
         .back:active {
           transform: scale(0.99);
           opacity: 0.92;
         }
-
         @media (max-width: 360px) {
           .dob {
             grid-template-columns: 1fr 1fr;
